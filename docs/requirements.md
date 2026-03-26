@@ -90,6 +90,10 @@ nudge waiting agent terminals into action.
   shall trigger the fallback path.
 - If no usable home directory is available, the implementation shall fall back
   to `/tmp/.<binary-name>-<uid>`.
+- Session socket paths that exceed the platform `sun_path` limit shall remain
+  supported via parent-directory `chdir` plus basename-only bind/connect.
+  Maximum supported session path depth is bounded by filesystem limits rather
+  than `sun_path`.
 
 ### Commands
 
@@ -128,11 +132,11 @@ Legacy single-letter compatibility modes shall be supported for parity with
 - `attach` shall fail if the session does not exist.
 - `new` shall create a session and immediately attach.
 - `start` shall create a session detached and return after startup succeeds.
-  Startup success requires both: the PTY child process has started
-  successfully, and the session socket is bound and connectable. The `start`
-  command must verify socket readiness by attempting to connect before
-  returning exit code 0; if either condition fails within the startup window,
-  `start` shall return a non-zero exit code.
+  Startup success requires all three: the control socket is created, bound, and
+  listening; the PTY child-start path succeeded; and a fresh client can
+  connect to the socket. The `start` command must verify socket readiness by
+  attempting to connect before returning exit code 0; if any condition fails
+  within the startup window, `start` shall return a non-zero exit code.
 - `run` shall create a session without daemonizing the master process.
 - `push` shall copy stdin verbatim into the running session.
 - `kill` shall send `SIGTERM` first, then escalate to `SIGKILL` after a grace
@@ -142,6 +146,12 @@ Legacy single-letter compatibility modes shall be supported for parity with
 - `clear` shall truncate the on-disk session log.
 - `current` shall print the human-readable session ancestry chain and exit
   successfully only when inside a session.
+- `list` shall distinguish running sessions, running sessions with at least one
+  attached client, and stale sessions.
+- Attached state for `list` shall be represented by master-owned session
+  metadata equivalent in behavior to `atch`'s socket execute-bit marker.
+- The master shall set and clear attached-state metadata as clients connect and
+  disconnect.
 
 ### Option Handling
 
@@ -189,6 +199,19 @@ Option handling requirements:
 - Client input shall be forwarded into the PTY as raw bytes.
 - The master shall continue running after clients detach, until the child exits
   or the session is explicitly killed.
+
+### Session Lifecycle
+
+- Master startup shall create, bind, and listen on the control socket before
+  the PTY fork/exec path begins.
+- The session shall not be considered `Running` until all three of these hold:
+  the control socket exists, is bound, and is listening; the PTY child-start
+  path succeeded; and a fresh client can connect to the socket.
+- The master shall not broadcast PTY output before the first client attaches.
+  Output produced before first attach shall still be captured to the
+  persistent log and in-memory ring buffer.
+- On first attach, the client shall receive history via log replay and ring
+  replay before transitioning to live streaming.
 
 ### Structured Logging
 
@@ -260,6 +283,12 @@ match `atch`.
   `scterm-core` that scans each colon-delimited ancestry segment for exact
   full-path equality with the target socket path. Basename-only matches are not
   sufficient.
+- Self-attach prevention sequence is normative:
+  1. expand the target session path from the argument or default rules
+  2. scan each colon-delimited ancestry segment for exact full-path equality
+     with the target socket path
+  3. if any segment matches, return a self-attach `ScError`
+  4. perform this check before any socket connect attempt
 - The CLI/app layer shall map ancestry and self-attach predicate failures to
   user-visible messages and deterministic exit codes; it shall not own the
   predicate itself.
@@ -278,8 +307,11 @@ A socket is **stale** when the socket file exists on the filesystem but
 stale socket; it is an absent session. Log replay is still valid and possible
 after a stale socket is detected.
 
-No other `connect()` error implies stale recovery. Errors such as `ETIMEDOUT`,
-`EPERM`, or `ENOTSOCK` are hard failures and shall not be treated as stale.
+If the path exists but is not a socket, the implementation shall surface
+`ENOTSOCK` / invalid-session behavior and shall not attempt stale recovery.
+
+No other `connect()` error implies stale recovery. Errors such as `ETIMEDOUT`
+or `EPERM` are hard failures and shall not be treated as stale.
 
 ### Error Handling and UX
 

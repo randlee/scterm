@@ -330,10 +330,12 @@ The master should expose one explicit serialized input path, conceptually:
 - `enqueue_redraw_input`
 - `enqueue_inbound_message`
 
-Internally these may share one queue, but architecturally they are one ordered
-stream into the PTY. These enqueue operations are the only allowed path into
-the PTY write file descriptor, and the serialization mechanism is owned
-entirely by `scterm-app`.
+Architecturally, all input sources flow through one master-owned PTY write
+path. The implementation may use a channel, a loop-owned queue, or any other
+single-point arbiter, but no clients, adapters, or lower layers may write
+directly to the PTY file descriptor. Single ownership of the write path is the
+rule; the exact serialization mechanism is an implementation detail owned by
+`scterm-app`.
 
 Output observation (tool-call tap) is deferred from Sprint 1. A hook point may
 be reserved only at the app layer, at the post-PTY-read / pre-broadcast tee
@@ -409,7 +411,8 @@ the master does not reinterpret the terminal stream.
 ### Create and Attach
 
 1. CLI resolves the session path and child command.
-2. Master creates the socket and persistent log.
+2. Master creates, binds, and listens on the control socket, then opens the
+   persistent log.
 3. Master spawns the PTY child.
 4. Attach client replays the on-disk log (read directly from filesystem).
 5. Attach client connects to the session socket.
@@ -427,10 +430,13 @@ the master does not reinterpret the terminal stream.
 
 ### Startup Readiness
 
-The session may be considered started only after both of these conditions hold:
+The session may be considered started only after all three of these conditions
+hold:
 
-- the PTY child process has been spawned successfully
-- the control socket is bound and connectable
+- the control socket is created, bound, listening, and connectable
+- the PTY child-start path has succeeded, including exec-error handshake
+  success with the daemon child
+- a fresh client can connect to the socket
 
 This rule applies to detached `start` semantics and to any internal readiness
 handshake used between the CLI process and the master.
@@ -442,8 +448,11 @@ master process is listening on it. This is detected by attempting to connect:
 if `connect()` returns `ECONNREFUSED`, the socket is stale. A missing socket
 file is not a stale socket — it is an absent session.
 
-No other `connect()` error implies stale recovery. Errors such as `ETIMEDOUT`,
-`EPERM`, or `ENOTSOCK` are hard failures and remain ordinary command errors.
+If the path exists but is not a socket, `connect()` resolution shall surface an
+invalid-session / `ENOTSOCK` hard error rather than stale-session recovery.
+
+No other `connect()` error implies stale recovery. Errors such as `ETIMEDOUT`
+or `EPERM` are hard failures and remain ordinary command errors.
 
 Stale sockets arise when the master process exits without cleaning up (e.g.
 crash, power loss, SIGKILL). The log file and session directory remain valid
@@ -477,6 +486,11 @@ All writes into the child process stdin path must pass through the master:
 
 This serialization point is mandatory. It keeps ordering deterministic and
 prevents races between human input and synthetic input.
+
+The master also preserves `atch`'s wait-for-first-attach behavior: PTY output
+produced before the first attached client is retained in the persistent log and
+ring buffer, but it is not broadcast live to zero clients. The first client
+receives that history through replay, then joins the live stream.
 
 ## History Model
 
@@ -759,6 +773,8 @@ and create a fresh `Session<Resolved>` (default open mode) or fail
 
 `Starting`, `Exiting`, and `Exited` are valid internal operational phases, but
 the coarse public typestate states remain `Resolved`, `Running`, and `Stale`.
+`Running` specifically means the control socket is created/bound/listening, the
+PTY child-start path succeeded, and a fresh client can connect.
 
 Replay internals may stay private implementation detail if that keeps the API
 clearer, but public lifecycle transitions should be consuming transitions rather

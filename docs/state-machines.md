@@ -23,6 +23,8 @@ Rules:
 - `Resolved`, `Running`, and `Stale` are the coarse public typestate states per
   `REQ-RBP-003`; `Starting`, `Exiting`, and `Exited` are internal operational
   phases and need not be public typestate
+- `Running` requires all three: control socket created/bound/listening, PTY
+  child-start path succeeded, and a fresh client can connect
 - only `Running` owns a live PTY and control socket
 - `Exited` is terminal
 

@@ -51,9 +51,17 @@ Properties:
 Typical conditions:
 
 - socket bind/connect failures
+- invalid-session detection for non-socket paths (`ENOTSOCK`) during connect
 - PTY spawn failures
 - raw-mode failures
 - signal or resize errors
+
+Taxonomy note:
+
+- missing path / `ENOENT` -> absent session
+- socket path plus `ECONNREFUSED` -> stale session
+- non-socket path / `ENOTSOCK` -> invalid session, no stale recovery
+- other connect failures such as `ETIMEDOUT` or `EPERM` -> hard runtime error
 
 ## `scterm-atm`
 

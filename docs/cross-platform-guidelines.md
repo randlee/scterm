@@ -11,6 +11,9 @@
 5. Use `PathBuf` and `.join()` for path construction.
 6. Do not assume Unix-only socket, path, or executable behavior unless the code
    is cfg-gated accordingly.
+7. On Unix, support session socket paths longer than `sun_path` via
+   parent-directory `chdir` plus basename-only bind/connect so parity does not
+   depend on short cache paths. See `requirements.md` session-path rules.
 
 ## Test Rules
 
