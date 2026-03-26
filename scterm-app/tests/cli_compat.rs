@@ -310,6 +310,7 @@ fn non_tty_attach_new_and_open_fail_clearly() -> Result<()> {
     ] {
         let output = env.run(&args)?;
         assert!(!output.status.success());
+        assert_eq!(output.status.code(), Some(6));
         assert!(output_text(&output).contains("requires a terminal"));
     }
 
@@ -354,6 +355,7 @@ fn strict_attach_failure_with_tty_reports_missing_session() -> Result<()> {
     let (status, output) = attach.wait_with_output(Duration::from_secs(3))?;
 
     assert!(!status.success());
+    assert_eq!(status.code(), Some(3));
     assert!(output.contains("does not exist"));
     Ok(())
 }
@@ -476,6 +478,41 @@ fn clear_clears_live_log_and_ring_history() -> Result<()> {
 }
 
 #[test]
+fn clear_clears_offline_log_history() -> Result<()> {
+    let env = TestEnv::new()?;
+
+    let start = env.run(&["start", "clear-offline", "/bin/sh", "-c", LINE_ECHO_SCRIPT])?;
+    assert!(start.status.success(), "{}", output_text(&start));
+    env.wait_for_socket("clear-offline")?;
+
+    let push = env.run_with_input(&["push", "clear-offline"], b"before-offline-clear\n")?;
+    assert!(push.status.success(), "{}", output_text(&push));
+    wait_for(
+        || {
+            fs::read_to_string(env.session_log("clear-offline"))
+                .is_ok_and(|text| text.contains("before-offline-clear"))
+        },
+        Duration::from_secs(3),
+        "clear-offline log to contain marker",
+    )?;
+
+    let kill_output = env.run(&["kill", "clear-offline"])?;
+    assert!(
+        kill_output.status.success(),
+        "{}",
+        output_text(&kill_output)
+    );
+    env.wait_for_socket_removed("clear-offline")?;
+
+    let cleared = env.run(&["clear", "clear-offline"])?;
+    assert!(cleared.status.success(), "{}", output_text(&cleared));
+
+    let log_metadata = fs::metadata(env.session_log("clear-offline"))?;
+    assert_eq!(log_metadata.len(), 0);
+    Ok(())
+}
+
+#[test]
 fn list_marks_attached_and_unattached_sessions() -> Result<()> {
     let env = TestEnv::new()?;
 
@@ -523,6 +560,12 @@ fn stale_session_is_reported_and_can_be_recreated() -> Result<()> {
         output_text(&list)
     );
 
+    let mut attach = env.spawn_pty(&["attach", "stale-case"])?;
+    let (status, output) = attach.wait_with_output(Duration::from_secs(3))?;
+    assert!(!status.success());
+    assert_eq!(status.code(), Some(4));
+    assert!(output.contains("not running"));
+
     let restart = env.run(&["start", "stale-case", "sleep", "999"])?;
     assert!(restart.status.success(), "{}", output_text(&restart));
     env.wait_for_socket("stale-case")?;
@@ -544,7 +587,38 @@ fn self_attach_prevention_uses_the_session_ancestry_env_var() -> Result<()> {
         .context("run self-attach prevention test")?;
 
     assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(5));
     assert!(output_text(&output).contains("attach to itself"));
+    Ok(())
+}
+
+#[test]
+fn kill_session_grace_reports_stopped() -> Result<()> {
+    let env = TestEnv::new()?;
+
+    let start = env.run(&["start", "kill-grace", "sleep", "999"])?;
+    assert!(start.status.success(), "{}", output_text(&start));
+    env.wait_for_socket("kill-grace")?;
+
+    let output = env.run(&["kill", "kill-grace"])?;
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output_text(&output).contains("stopped"));
+    env.wait_for_socket_removed("kill-grace")?;
+    Ok(())
+}
+
+#[test]
+fn kill_session_force_reports_killed() -> Result<()> {
+    let env = TestEnv::new()?;
+
+    let start = env.run(&["start", "kill-force", "sleep", "999"])?;
+    assert!(start.status.success(), "{}", output_text(&start));
+    env.wait_for_socket("kill-force")?;
+
+    let output = env.run(&["kill", "-f", "kill-force"])?;
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output_text(&output).contains("killed"));
+    env.wait_for_socket_removed("kill-force")?;
     Ok(())
 }
 

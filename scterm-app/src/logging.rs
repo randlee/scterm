@@ -5,16 +5,12 @@
 )]
 
 use anyhow::{Context, Result};
-use sc_observability::{Logger, LoggerConfig};
-use sc_observability_types::{
-    ActionName, Level, LogEvent, ProcessIdentity, ServiceName, TargetCategory, Timestamp,
-};
-use serde_json::Map;
+use serde_json::json;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-
-fn service_name() -> ServiceName {
-    ServiceName::new("scterm").expect("static service name is valid")
-}
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A minimal structured logger owned by `scterm-app`.
 ///
@@ -22,7 +18,7 @@ fn service_name() -> ServiceName {
 /// layer while using the logging-only `sc-observability` facade crate.
 pub struct AppLogger {
     path: PathBuf,
-    logger: Logger,
+    file: Mutex<File>,
 }
 
 impl std::fmt::Debug for AppLogger {
@@ -41,14 +37,24 @@ impl AppLogger {
     /// Returns an error when the log directory cannot be created.
     pub fn new(log_root: impl Into<PathBuf>) -> Result<Self> {
         let log_root = log_root.into();
-        let config = LoggerConfig::default_for(service_name(), log_root.clone());
         let path = log_root
             .join("scterm")
             .join("logs")
             .join("scterm.log.jsonl");
-        let logger = Logger::new(config).context("initialize app structured logger")?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("create app log directory {}", parent.display()))?;
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .with_context(|| format!("open app structured log {}", path.display()))?;
 
-        Ok(Self { path, logger })
+        Ok(Self {
+            path,
+            file: Mutex::new(file),
+        })
     }
 
     /// Appends one structured event line.
@@ -56,31 +62,29 @@ impl AppLogger {
     /// # Errors
     /// Returns an error when the log file cannot be opened or written.
     pub fn emit(&self, target: &str, action: &str, message: &str) -> Result<()> {
-        let event = LogEvent {
-            version: sc_observability_types::constants::OBSERVATION_ENVELOPE_VERSION.to_string(),
-            timestamp: Timestamp::UNIX_EPOCH,
-            level: Level::Info,
-            service: service_name(),
-            target: TargetCategory::new(target)
-                .with_context(|| format!("validate log target `{target}`"))?,
-            action: ActionName::new(action)
-                .with_context(|| format!("validate log action `{action}`"))?,
-            message: Some(message.to_string()),
-            identity: ProcessIdentity::default(),
-            trace: None,
-            request_id: None,
-            correlation_id: None,
-            outcome: Some("ok".to_string()),
-            diagnostic: None,
-            state_transition: None,
-            fields: Map::default(),
-        };
-        self.logger
-            .emit(event)
+        let timestamp_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("system clock precedes UNIX_EPOCH")?
+            .as_millis();
+        let event = json!({
+            "version": 1,
+            "timestamp_ms": timestamp_ms,
+            "level": "INFO",
+            "service": "scterm",
+            "target": target,
+            "action": action,
+            "message": message,
+            "outcome": "ok",
+        });
+        let mut file = self
+            .file
+            .lock()
+            .map_err(|_| anyhow::anyhow!("app structured logger mutex poisoned"))?;
+        writeln!(file, "{event}")
             .with_context(|| format!("emit structured log event to {}", self.path.display()))?;
-        self.logger
-            .flush()
+        file.flush()
             .with_context(|| format!("flush structured log event to {}", self.path.display()))?;
+        drop(file);
         Ok(())
     }
 
