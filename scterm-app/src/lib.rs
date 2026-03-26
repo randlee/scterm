@@ -3,6 +3,8 @@
 //! This crate owns session startup, master-session behavior, attach flow,
 //! persistent history policy, and structured logging integration.
 
+pub mod cli;
+
 mod attach;
 mod logging;
 mod master;
@@ -10,6 +12,8 @@ mod storage;
 
 #[doc(inline)]
 pub use attach::{AttachSession, LiveAttachment};
+#[doc(inline)]
+pub use cli::run_cli;
 #[doc(inline)]
 pub use logging::AppLogger;
 #[doc(inline)]
