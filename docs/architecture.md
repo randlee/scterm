@@ -279,17 +279,16 @@ The runtime model must remain explicit.
 
 ## Structured Logging Boundary
 
-Initial structured logging should use `sc-observability` from the sibling repo
-at `../sc-observability`.
+Structured logging uses a self-contained `AppLogger` implemented directly in
+`scterm-app` using `serde_json` and `std::io`. No external observability crate
+dependency is required or permitted in this repo.
 
 Boundary rules:
 
-- only `scterm-app` and the final binary may depend directly on
-  `sc-observability`
+- only `scterm-app` and the final binary own and configure the `AppLogger`
 - `scterm-core` stays logging-implementation-agnostic
 - `scterm-unix` stays logging-implementation-agnostic
-- Sprint 1 does not adopt any higher-layer crate from the sibling
-  `sc-observability` workspace
+- lower crates prefer rich typed errors and return values over ad-hoc logging
 
 This keeps local structured logs available immediately without widening the
 core architecture to include broader observability concerns.

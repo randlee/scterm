@@ -63,7 +63,7 @@ Cover:
 
 - no forbidden dependencies in `scterm-core`
 - no ATM dependencies outside `scterm-atm`
-- no higher-layer `sc-observability` workspace crates in Sprint 1
+- no `sc-observability` or external observability crates
 - no `ATM_HOME` references
 
 ### ATM Extension Tests
