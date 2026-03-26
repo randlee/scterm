@@ -1,6 +1,6 @@
 ---
 name: sprint-report
-description: Generate a sprint status report for the current phase. Default is --table.
+description: Generate a phase status report for scterm. Default is --table.
 ---
 
 # Sprint Report Skill
@@ -19,24 +19,29 @@ Default: `--table`
 
 ## Data Source
 
-**Always use `atm gh pr list` first** — single call, returns all open PRs with CI and merge state:
+Use `gh pr list` to get current phase PR state:
 
 ```bash
-atm gh pr list
+cd /Users/randlee/Documents/github/scterm
+gh pr list --state all --limit 20
 ```
 
-This is faster and sufficient for populating `sprint_rows` and `integration_row`. Only drill into individual `gh run view` calls if you need failure details for a specific job.
+For CI status on open PRs:
 
-**Dogfooding rule**: If `atm gh pr list` output is missing information needed to fill the report (e.g., no per-job failure detail, no QA state, truncated CI summary), **file a GitHub issue** describing what field or format change would make it sufficient, then improve the command. Do not silently work around gaps with extra `gh` CLI calls — surface them as product issues.
+```bash
+gh pr checks <PR_NUMBER>
+```
+
+Only drill into individual `gh run view` calls if you need failure details for a specific job.
 
 ## Render Command
 
-The template path is relative — must run from the **main repo root** (not a worktree).
+The template path is relative — must run from the **scterm repo root** (not a worktree).
 
 ```bash
-cd "${CLAUDE_PROJECT_DIR:-$(git worktree list | head -1 | awk '{print $1}')}"
+cd /Users/randlee/Documents/github/scterm
 echo '<json>' > /tmp/sprint-report.json
-sc-compose render .claude/skills/sprint-report/report.md.j2 --var-file /tmp/sprint-report.json
+sc-compose render skills/sprint-report/report.md.j2 --var-file /tmp/sprint-report.json
 ```
 
 ## --table (default)
@@ -44,8 +49,8 @@ sc-compose render .claude/skills/sprint-report/report.md.j2 --var-file /tmp/spri
 ```json
 {
   "mode": "table",
-  "sprint_rows": "| phase-0 | ✅ | ✅ | 🏁 | #3 |\n| phase-1 | ✅ | ✅ | 🚀 | #4 |",
-  "integration_row": "| **develop** | | — | 🌀 | — |"
+  "sprint_rows": "| Phase 0 Workspace skeleton | ✅ | ✅ | 🏁 | #3 |\n| Phase 1 scterm-core | ✅ | ✅ | 🌀 | #4 |",
+  "integration_row": "| **develop integration** | | — | 🌀 | — |"
 }
 ```
 
@@ -54,8 +59,8 @@ sc-compose render .claude/skills/sprint-report/report.md.j2 --var-file /tmp/spri
 ```json
 {
   "mode": "detailed",
-  "sprint_rows": "Sprint: phase-0  workspace skeleton\nPR: #3\nQA: PASS ✓ (iter 2)\nCI: Merged to develop ✓\n────────────────────────────────────────\nSprint: phase-1  scterm-core\nPR: #4\nQA: PASS ✓\nCI: Ready to merge",
-  "integration_row": "Integration: develop\nCI: Awaiting phase-3+ PRs"
+  "sprint_rows": "Phase: 0  Workspace skeleton\nPR: #3\nQA: PASS ✓\nCI: Merged to develop ✓\n────────────────────────────────────────\nPhase: 1  scterm-core\nPR: #4\nQA: PASS ✓\nCI: Running (1 pending)",
+  "integration_row": "Integration: develop\nCI: Pending phase-2 merge"
 }
 ```
 
