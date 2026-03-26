@@ -490,6 +490,10 @@ where
         self.log.clear()
     }
 
+    pub(crate) fn log_event(&self, target: &str, action: &str, message: &str) -> Result<()> {
+        self.logger.emit(target, action, message)
+    }
+
     fn enqueue(&mut self, source: InputSource, bytes: impl Into<Vec<u8>>) {
         self.input_queue.push_back(QueuedInput {
             source,

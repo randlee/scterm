@@ -51,6 +51,7 @@ pub(super) struct GlobalOptions {
     pub(super) quiet: bool,
     pub(super) log_cap: LogCap,
     pub(super) detach_char: Option<u8>,
+    pub(super) atm: bool,
 }
 
 impl Default for GlobalOptions {
@@ -59,6 +60,7 @@ impl Default for GlobalOptions {
             quiet: false,
             log_cap: LogCap::from_bytes(1_048_576),
             detach_char: Some(DEFAULT_DETACH_CHAR),
+            atm: false,
         }
     }
 }
@@ -97,6 +99,7 @@ pub(super) enum Action {
     InternalMaster {
         session_path: String,
         log_cap_bytes: u64,
+        atm_enabled: bool,
         child_command: Vec<String>,
     },
 }

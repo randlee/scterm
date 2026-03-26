@@ -29,6 +29,7 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use crate::{
+    atm::{drain_atm_bridge, start_atm_bridge},
     attached_state, log_path_for_session, AttachSession, MasterConfig, MasterSession,
     NoopOutputObserver, PersistentLog, SessionLauncher,
 };
@@ -123,15 +124,22 @@ fn execute(program: &str, action: Action) -> Result<(), CliError> {
         Action::InternalMaster {
             session_path,
             log_cap_bytes,
+            atm_enabled,
             child_command,
-        } => internal_master_main(program, &session_path, log_cap_bytes, &child_command)
-            .map_err(runtime_error),
+        } => internal_master_main(
+            program,
+            &session_path,
+            log_cap_bytes,
+            atm_enabled,
+            &child_command,
+        )
+        .map_err(runtime_error),
     }
 }
 
 fn print_help(program: &str) {
     println!(
-        "Usage:\n  {program} [<session> [command...]]\n  {program} <command> [options] ...\n\nCommands:\n  attach <session>\n  new <session> [command...]\n  start <session> [command...]\n  run <session> [command...]\n  push <session>\n  kill [-f|--force] <session>\n  clear [<session>]\n  list\n  current"
+        "Usage:\n  {program} [<session> [command...]]\n  {program} <command> [options] ...\n\nOptions:\n  --atm                Enable ATM inbound message injection for new sessions\n\nCommands:\n  attach <session>\n  new <session> [command...]\n  start <session> [command...]\n  run <session> [command...]\n  push <session>\n  kill [-f|--force] <session>\n  clear [<session>]\n  list\n  current"
     );
 }
 
@@ -335,6 +343,7 @@ fn start_session(program: &str, spec: &SessionCommand, foreground: bool) -> Resu
             program,
             &path.to_string(),
             spec.options.log_cap.bytes(),
+            spec.options.atm,
             &spec.child_command,
         )
         .map_err(runtime_error)
@@ -357,6 +366,7 @@ fn spawn_internal_master(path: &SessionPath, spec: &SessionCommand) -> Result<()
         .arg("__internal-master")
         .arg(path.to_string())
         .arg(spec.options.log_cap.bytes().to_string())
+        .arg(spec.options.atm.to_string())
         .arg("--");
     for arg in &spec.child_command {
         command.arg(arg);
@@ -538,6 +548,7 @@ fn internal_master_main(
     program: &str,
     session_path: &str,
     log_cap_bytes: u64,
+    atm_enabled: bool,
     child_command: &[String],
 ) -> Result<()> {
     let path = SessionPath::new(session_path).context("validate internal session path")?;
@@ -547,6 +558,7 @@ fn internal_master_main(
         LogCap::from_bytes(log_cap_bytes),
         app_log_root_for(&path),
     );
+    let app_log_root = config.app_log_root().to_path_buf();
     let launcher = SessionLauncher::new(config);
     let started = launcher.start(
         Session::new_resolved(path),
@@ -555,15 +567,23 @@ fn internal_master_main(
         NoopOutputObserver,
     )?;
     let mut master = started.into_master();
-    drive_master(&mut master)
+    let atm_bridge = start_atm_bridge(master.path(), &app_log_root, atm_enabled)?;
+    drive_master(&mut master, atm_bridge.as_ref())
 }
 
-fn drive_master(master: &mut MasterSession) -> Result<()> {
+fn drive_master(
+    master: &mut MasterSession,
+    atm_bridge: Option<&crate::atm::AtmBridge>,
+) -> Result<()> {
     let mut next_client_id = 1_u64;
     let mut read_clients = Vec::<ReadClient>::new();
     let mut pty_buffer = [0_u8; 4096];
 
     loop {
+        if let Some(bridge) = atm_bridge {
+            drain_atm_bridge(master, bridge);
+        }
+
         if master.child_exited()? {
             master.handle_child_exit()?;
             return Ok(());

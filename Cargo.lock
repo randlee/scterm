@@ -270,10 +270,22 @@ dependencies = [
  "anyhow",
  "nix",
  "sc-observability",
+ "scterm-atm",
  "scterm-core",
  "scterm-unix",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "scterm-atm"
+version = "0.1.0"
+dependencies = [
+ "scterm-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]

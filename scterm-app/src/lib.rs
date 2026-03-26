@@ -5,6 +5,7 @@
 
 pub mod cli;
 
+mod atm;
 mod attach;
 mod logging;
 mod master;

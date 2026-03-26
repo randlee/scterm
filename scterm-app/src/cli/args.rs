@@ -146,6 +146,11 @@ fn parse_internal_master(mut args: VecDeque<String>) -> Result<Action, CliError>
         .ok_or_else(|| CliError::usage("Missing internal log cap."))?
         .parse::<u64>()
         .map_err(|_| CliError::usage("Internal log cap is invalid."))?;
+    let atm_enabled = args
+        .pop_front()
+        .ok_or_else(|| CliError::usage("Missing internal ATM flag."))?
+        .parse::<bool>()
+        .map_err(|_| CliError::usage("Internal ATM flag is invalid."))?;
     if args.front().is_some_and(|arg| arg == "--") {
         args.pop_front();
     }
@@ -153,6 +158,7 @@ fn parse_internal_master(mut args: VecDeque<String>) -> Result<Action, CliError>
     Ok(Action::InternalMaster {
         session_path,
         log_cap_bytes,
+        atm_enabled,
         child_command,
     })
 }
@@ -199,6 +205,11 @@ fn parse_global_options(
         if arg == "--" {
             args.pop_front();
             return Ok(());
+        }
+        if arg == "--atm" {
+            options.atm = true;
+            args.pop_front();
+            continue;
         }
         if !arg.starts_with('-') || arg == "-" || arg.starts_with("--") {
             return Ok(());
@@ -351,5 +362,16 @@ mod tests {
         };
         assert_eq!(spec.session, "demo");
         assert_eq!(spec.child_command, ["sleep", "1"]);
+    }
+
+    #[test]
+    fn parses_atm_opt_in_before_the_session_name() {
+        let action =
+            parse_cli(&argv(&["start", "--atm", "demo", "sleep", "1"])).expect("parse cli");
+        let Action::Start(spec) = action else {
+            panic!("expected start action");
+        };
+        assert!(spec.options.atm);
+        assert_eq!(spec.session, "demo");
     }
 }
