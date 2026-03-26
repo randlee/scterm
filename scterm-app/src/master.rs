@@ -23,8 +23,12 @@ use scterm_unix::{
 use crate::logging::AppLogger;
 use crate::storage::{attached_state, log_path_for_session, set_attached_state, PersistentLog};
 
+mod sealed {
+    pub trait Sealed {}
+}
+
 /// A passive tap point for PTY output.
-pub trait OutputObserver: Send + Sync {
+pub trait OutputObserver: sealed::Sealed + Send + Sync {
     /// Observes PTY output bytes without mutating delivery behavior.
     fn observe(&self, bytes: &[u8]);
 }
@@ -32,6 +36,8 @@ pub trait OutputObserver: Send + Sync {
 /// A no-op output observer.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoopOutputObserver;
+
+impl sealed::Sealed for NoopOutputObserver {}
 
 impl OutputObserver for NoopOutputObserver {
     fn observe(&self, _bytes: &[u8]) {}

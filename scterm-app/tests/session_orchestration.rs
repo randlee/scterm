@@ -1,31 +1,15 @@
 //! Integration tests for `scterm-app` session orchestration.
 
-use std::os::fd::OwnedFd;
-use std::sync::{Arc, Mutex};
-
 use anyhow::Result;
 use nix::pty::openpty;
 use scterm_app::{
     log_path_for_session, AppLogger, AttachSession, MasterConfig, NoopOutputObserver,
-    OutputObserver, PersistentLog, SessionLauncher,
+    PersistentLog, SessionLauncher,
 };
 use scterm_core::{AttachRequest, LogCap, RingSize, Session, SessionPath, WindowSize};
 use scterm_unix::{PtyCommand, SocketTransport};
+use std::os::fd::OwnedFd;
 use tempfile::TempDir;
-
-#[derive(Debug, Default, Clone)]
-struct RecordingObserver {
-    records: Arc<Mutex<Vec<Vec<u8>>>>,
-}
-
-impl OutputObserver for RecordingObserver {
-    fn observe(&self, bytes: &[u8]) {
-        self.records
-            .lock()
-            .expect("observer records")
-            .push(bytes.to_vec());
-    }
-}
 
 #[test]
 fn persistent_log_caps_to_the_latest_bytes() -> Result<()> {
@@ -43,7 +27,6 @@ fn persistent_log_caps_to_the_latest_bytes() -> Result<()> {
 fn master_records_pre_attach_output_without_broadcasting() -> Result<()> {
     let tempdir = TempDir::new()?;
     let path = SessionPath::new(tempdir.path().join("session.sock"))?;
-    let observer = RecordingObserver::default();
     let launcher = SessionLauncher::new(MasterConfig::new(
         RingSize::new(64)?,
         LogCap::from_bytes(1024),
@@ -54,7 +37,7 @@ fn master_records_pre_attach_output_without_broadcasting() -> Result<()> {
         Session::new_resolved(path),
         &command,
         Some(WindowSize::new(24, 80, 0, 0)),
-        observer.clone(),
+        NoopOutputObserver,
     )?;
     let mut master = started.into_master();
 
@@ -63,7 +46,6 @@ fn master_records_pre_attach_output_without_broadcasting() -> Result<()> {
     assert_eq!(summary.delivered_clients(), 0);
     assert_eq!(master.log().replay()?, b"before-attach");
     assert_eq!(master.ring_snapshot(), b"before-attach");
-    assert_eq!(observer.records.lock().expect("observer data").len(), 1);
     Ok(())
 }
 
