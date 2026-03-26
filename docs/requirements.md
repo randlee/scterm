@@ -112,6 +112,11 @@ Legacy single-letter compatibility modes shall be supported for parity with
 - `attach` shall fail if the session does not exist.
 - `new` shall create a session and immediately attach.
 - `start` shall create a session detached and return after startup succeeds.
+  Startup success is defined as: the master process has created the session
+  socket and is ready to accept client connections. The `start` command must
+  verify this by attempting to connect to the socket before returning exit
+  code 0; if the socket is not connectable within a reasonable timeout, `start`
+  shall return a non-zero exit code.
 - `run` shall create a session without daemonizing the master process.
 - `push` shall copy stdin verbatim into the running session.
 - `kill` shall send `SIGTERM` first, then escalate to `SIGKILL` after a grace
@@ -169,6 +174,21 @@ Option handling requirements:
 - The master shall continue running after clients detach, until the child exits
   or the session is explicitly killed.
 
+### Multi-Client Detach and Kill Semantics
+
+- When one client detaches, all other attached clients shall remain connected
+  and continue receiving PTY output uninterrupted.
+- When `kill` is issued, the master shall send `SIGTERM` to the child process
+  group. All currently attached clients shall be disconnected immediately with
+  their local terminals restored before the master exits.
+- When `kill -f` / `kill --force` is issued, the master shall send `SIGKILL`
+  to the child process group. All clients shall be disconnected immediately.
+- When the child process exits for any reason (natural exit, signal, kill),
+  the master shall disconnect all attached clients, write the end marker to the
+  log, clean up the socket file, and exit.
+- A client that is mid-attach (replaying log or ring) when the session is
+  killed shall have its connection closed cleanly and its terminal restored.
+
 ### Session History
 
 - Session output shall be recorded in an in-memory ring buffer.
@@ -201,6 +221,13 @@ Option handling requirements:
 - No authentication protocol shall be added in sprint 1.
 - Tests shall isolate session state in temporary directories.
 
+### Stale Socket Definition
+
+A socket is **stale** when the socket file exists on the filesystem but
+`connect()` on it fails with `ECONNREFUSED`. A missing socket file is not a
+stale socket; it is an absent session. Log replay is still valid and possible
+after a stale socket is detected.
+
 ### Error Handling and UX
 
 - Error messages and exit codes shall be broadly compatible with `atch`.
@@ -210,6 +237,25 @@ Option handling requirements:
 - Stale sessions shall be detectable and shown distinctly by `list`.
 - Bad commands, missing sessions, invalid options, and invalid argument counts
   shall all produce deterministic failures.
+
+### Exit Codes
+
+The following exit codes are required:
+
+| Code | Meaning |
+|------|---------|
+| `0`  | Success |
+| `1`  | General / unclassified error |
+| `2`  | Usage error (bad command, invalid option, missing argument) |
+| `3`  | Session not found |
+| `4`  | Session is stale (socket exists but master is not running) |
+| `5`  | Self-attach loop detected |
+| `6`  | No TTY available (operation requires a terminal) |
+| `7`  | Session already exists (when `new` is used and session is running) |
+| `8`  | `start` startup timeout (socket not connectable within timeout) |
+
+Exit codes must be stable across releases. New codes may be added; existing
+codes must not be reassigned.
 
 ## Sprint 1 Acceptance Criteria
 
@@ -228,6 +274,27 @@ Option handling requirements:
 
 Sprint 2 adds inbound ATM delivery into active terminal sessions without
 changing sprint 1 session semantics.
+
+### ATM Message Relevance Filter
+
+The ATM watcher shall only inject messages that are relevant to the current
+session. Injecting all inbound ATM messages is not acceptable.
+
+Relevance is determined as follows:
+
+- A message is relevant if its `to` field matches the session name or a
+  configured identity alias for this session.
+- If no explicit address match exists, a message is relevant if its `to` field
+  matches the current OS username that owns the session, and no exclusion
+  applies.
+- A message whose `from` field matches the session identity shall be excluded
+  to prevent feedback loops.
+
+The session identity (name and socket path) is passed to the watcher at
+startup. The watcher shall not read `ATM_HOME` or walk ATM internal directories
+to resolve identity.
+
+This filter shall be independently testable without a live ATM installation.
 
 ### Hard Constraints
 
@@ -315,9 +382,14 @@ commit.
 The implementation shall use typestate where it materially prevents invalid
 session lifecycle transitions.
 
-- Session master states shall at minimum distinguish `Resolved` from `Running`.
-- Attach client states shall at minimum distinguish `Connecting`, `Live`, and
-  `Detached`.
+- Session master states shall at minimum distinguish `Resolved`, `Running`,
+  and `Stale`. `Stale` is reached from `Resolved` when the socket file exists
+  but `connect()` fails with `ECONNREFUSED`.
+- Attach client states shall follow this ordering:
+  `LogReplaying → Connecting → RingReplaying → Live → Detached`.
+  Log replay reads the on-disk log directly (no socket required) and must
+  precede socket connection. This ordering is not negotiable — it matches
+  `atch` behavior and enables history replay for stale sessions.
 - Replay phases may use typestate or private internal state as long as invalid
   public transitions remain unrepresentable or tightly constrained.
 - State transitions exposed across public API boundaries shall consume the old

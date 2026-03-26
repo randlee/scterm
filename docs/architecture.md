@@ -319,16 +319,32 @@ Per session:
 
 Client-to-master traffic is structured control/data packets.
 
-Required packet categories:
+#### Wire Format
 
-- `push`
-- `attach`
-- `detach`
-- `winch`
-- `redraw`
-- `kill`
+All client-to-master packets share a common framing:
 
-This traffic is low volume and benefits from explicit message typing.
+```
+Offset  Size   Field
+------  -----  -----
+0       1      packet type (u8, see table below)
+1       2      payload length in bytes (u16, little-endian)
+3       N      payload bytes (N = length field value)
+```
+
+Minimum packet size is 3 bytes (type + zero-length payload).
+
+| Type byte | Name     | Payload format                              |
+|-----------|----------|---------------------------------------------|
+| `0x01`    | `attach` | empty                                       |
+| `0x02`    | `detach` | empty                                       |
+| `0x03`    | `push`   | raw bytes to write into the PTY             |
+| `0x04`    | `winch`  | cols: u16 LE, rows: u16 LE (4 bytes total)  |
+| `0x05`    | `redraw` | empty                                       |
+| `0x06`    | `kill`   | empty                                       |
+
+Unknown type bytes must be ignored by the master (forward-compatibility).
+Packets with a length field exceeding a reasonable maximum (e.g. 64 KiB) should
+be rejected and the connection closed.
 
 ### Master to Client
 
@@ -345,8 +361,8 @@ the master does not reinterpret the terminal stream.
 1. CLI resolves the session path and child command.
 2. Master creates the socket and persistent log.
 3. Master spawns the PTY child.
-4. Attach client connects.
-5. Attach client replays the persistent log.
+4. Attach client replays the on-disk log (read directly from filesystem).
+5. Attach client connects to the session socket.
 6. Client sends `attach` and `redraw`.
 7. Master optionally replays the ring buffer.
 8. Session switches to steady-state streaming.
@@ -354,16 +370,31 @@ the master does not reinterpret the terminal stream.
 ### Attach Existing Session
 
 1. Client resolves the session path.
-2. Client replays the log if present.
-3. Client connects and requests attach.
+2. Client replays the on-disk log if present (direct filesystem read).
+3. Client connects to the session socket and sends `attach`.
 4. Master replays ring history if needed.
 5. Live PTY output resumes.
 
+### Stale Socket Definition
+
+A socket is **stale** when the socket file exists on the filesystem but no
+master process is listening on it. This is detected by attempting to connect:
+if `connect()` returns `ECONNREFUSED` (or the file exists but `connect()`
+fails), the socket is stale. A missing socket file is not a stale socket — it
+is an absent session.
+
+Stale sockets arise when the master process exits without cleaning up (e.g.
+crash, power loss, SIGKILL). The log file and session directory remain valid
+after a stale socket is detected and log replay must still be possible.
+
 ### Stale Session Recovery
 
-1. CLI or client attempts to connect.
-2. If the socket is stale, log replay still occurs.
-3. Default open mode may remove the stale socket and create a fresh session.
+1. CLI or client attempts `connect()` on the session socket.
+2. `connect()` fails with `ECONNREFUSED` → socket is stale.
+3. Client replays the on-disk log if present (history is still valid).
+4. Default open mode removes the stale socket file and creates a fresh session.
+5. `attach` command fails with a clear error indicating a stale session was
+   found and suggests using default open mode to recover.
 
 ### Detach
 
@@ -458,6 +489,7 @@ integration is enabled.
 Responsibilities:
 
 - invoke the external `atm` CLI to block for inbound messages;
+- filter inbound messages to those relevant to the current session;
 - parse sender identity and body text from CLI output;
 - de-duplicate messages using local state;
 - emit normalized inbound message events to the master.
@@ -468,6 +500,29 @@ polling loop.
 
 The watcher should communicate with the app layer using typed events rather
 than shell text blobs once parsing is complete.
+
+### ATM Relevance Filter
+
+The watcher must not inject every ATM message into the session — it must filter
+to messages intended for the current session or agent identity.
+
+**Relevance criteria** (evaluated in order, first match wins):
+
+1. **Explicit session address**: the ATM message `to` field matches the session
+   name or a configured identity alias for this session.
+2. **Ambient identity**: if no explicit address is present, the message is
+   relevant if the `to` field matches the current OS user identity (same user
+   that owns the session), and no other filter excludes it.
+3. **Exclusion**: messages sent by the session itself (where `from` matches the
+   session identity) must be suppressed to prevent feedback loops.
+
+The session identity is derived from the `SCTERM_SESSION` environment variable
+chain and the session name. The watcher receives the session name and socket
+path as configuration at startup — it does not read `ATM_HOME` or walk the ATM
+directory structure.
+
+The relevance filter is local to `scterm-atm` and must be explicitly tested.
+Unfiltered message injection is not acceptable.
 
 ## ATM Injection Flow
 
@@ -622,9 +677,23 @@ internal phase into type noise.
 **Required coarse states**:
 
 ```text
-Session: Resolved -> Running
-Attach client: Connecting -> Live -> Detached
+Session (master side):
+  Resolved -> Running
+  Resolved -> Stale        (socket file exists but connect() fails)
+
+Attach client:
+  LogReplaying -> Connecting -> RingReplaying -> Live -> Detached
 ```
+
+Note the attach client ordering: log replay reads the on-disk log file
+directly (no socket connection required) and must occur before the socket
+connection is established. This matches `atch` behavior and allows history
+replay even for stale sessions.
+
+The `Stale` state is a terminal state for `Session<Resolved>` when the socket
+is detected as stale. The caller must decide whether to remove the stale socket
+and create a fresh `Session<Resolved>` (default open mode) or fail
+(`attach` command).
 
 Replay internals may stay private implementation detail if that keeps the API
 clearer, but public lifecycle transitions should be consuming transitions rather
@@ -640,6 +709,11 @@ pub struct Session<S> {
 
 impl Session<Resolved> {
     pub fn start(self, ...) -> Result<Session<Running>, ScError> { ... }
+    pub fn check_stale(self) -> Result<Session<Running>, Session<Stale>> { ... }
+}
+
+impl Session<Stale> {
+    pub fn recover(self) -> Result<Session<Resolved>, ScError> { ... }
 }
 ```
 
