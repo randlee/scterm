@@ -18,6 +18,15 @@ pub struct SessionName(String);
 impl SessionName {
     /// Creates a validated session name.
     ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::SessionName;
+    ///
+    /// let name = SessionName::new("demo-1")?;
+    /// assert_eq!(name.as_str(), "demo-1");
+    /// # Ok::<(), scterm_core::ScError>(())
+    /// ```
+    ///
     /// # Errors
     /// Returns [`ScError`] when `value` is empty, contains `/`, or uses
     /// characters outside `[A-Za-z0-9._-]`.
@@ -70,6 +79,15 @@ pub struct SessionPath(PathBuf);
 impl SessionPath {
     /// Creates a validated absolute session path.
     ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::SessionPath;
+    ///
+    /// let path = SessionPath::new("/tmp/demo.sock")?;
+    /// assert_eq!(path.as_path().to_str(), Some("/tmp/demo.sock"));
+    /// # Ok::<(), scterm_core::ScError>(())
+    /// ```
+    ///
     /// # Errors
     /// Returns [`ScError`] when `path` is empty or not absolute.
     pub fn new(path: impl Into<PathBuf>) -> Result<Self, ScError> {
@@ -113,6 +131,8 @@ pub struct LogCap(u64);
 
 impl LogCap {
     /// Creates a log cap from an exact byte count.
+    ///
+    /// Any `u64` value is valid. A value of `0` disables persistent logging.
     #[must_use]
     pub fn from_bytes(bytes: u64) -> Self {
         Self(bytes)
@@ -194,7 +214,7 @@ impl RingSize {
     pub fn new(value: usize) -> Result<Self, ScError> {
         NonZeroUsize::new(value)
             .map(Self)
-            .ok_or_else(|| ScError::invalid_path(Path::new("ring-size must be non-zero")))
+            .ok_or_else(|| ScError::invalid_value("ring size must be non-zero"))
     }
 
     /// Returns the ring size in bytes.

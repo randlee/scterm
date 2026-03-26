@@ -9,6 +9,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::path::Path;
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScErrorKind {
     SessionNotFound,
@@ -17,6 +18,7 @@ enum ScErrorKind {
     NoTty,
     InvalidName,
     InvalidPath,
+    InvalidValue,
     LogCapParse,
     InvalidPacket,
 }
@@ -48,18 +50,45 @@ impl StdError for ScError {
 
 impl ScError {
     /// Creates a session-not-found error for `path`.
+    ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::ScError;
+    /// use std::path::Path;
+    ///
+    /// let error = ScError::session_not_found(Path::new("/tmp/demo"));
+    /// assert!(error.is_session_not_found());
+    /// ```
     #[must_use]
     pub fn session_not_found(path: &Path) -> Self {
         Self::with_path(ScErrorKind::SessionNotFound, "session was not found", path)
     }
 
     /// Creates a stale-socket error for `path`.
+    ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::ScError;
+    /// use std::path::Path;
+    ///
+    /// let error = ScError::stale_socket(Path::new("/tmp/demo"));
+    /// assert!(error.is_stale_socket());
+    /// ```
     #[must_use]
     pub fn stale_socket(path: &Path) -> Self {
         Self::with_path(ScErrorKind::StaleSocket, "session socket is stale", path)
     }
 
     /// Creates a self-attach-loop error for `path`.
+    ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::ScError;
+    /// use std::path::Path;
+    ///
+    /// let error = ScError::self_attach_loop(Path::new("/tmp/demo"));
+    /// assert!(error.is_self_attach_loop());
+    /// ```
     #[must_use]
     pub fn self_attach_loop(path: &Path) -> Self {
         Self::with_path(
@@ -70,24 +99,71 @@ impl ScError {
     }
 
     /// Creates a no-tty error.
+    ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::ScError;
+    ///
+    /// let error = ScError::no_tty();
+    /// assert!(error.is_no_tty());
+    /// ```
     #[must_use]
     pub fn no_tty() -> Self {
         Self::new(ScErrorKind::NoTty, "operation requires a TTY")
     }
 
     /// Creates an invalid-name error for `input`.
+    ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::ScError;
+    ///
+    /// let error = ScError::invalid_name("bad/name");
+    /// assert!(error.is_invalid_name());
+    /// ```
     #[must_use]
     pub fn invalid_name(input: impl Into<String>) -> Self {
         Self::with_input(ScErrorKind::InvalidName, "session name is invalid", input)
     }
 
     /// Creates an invalid-path error for `path`.
+    ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::ScError;
+    /// use std::path::Path;
+    ///
+    /// let error = ScError::invalid_path(Path::new("relative"));
+    /// assert!(error.is_invalid_path());
+    /// ```
     #[must_use]
     pub fn invalid_path(path: &Path) -> Self {
         Self::with_path(ScErrorKind::InvalidPath, "session path is invalid", path)
     }
 
+    /// Creates an invalid-value error for `input`.
+    ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::ScError;
+    ///
+    /// let error = ScError::invalid_value("ring size must be non-zero");
+    /// assert!(error.is_invalid_value());
+    /// ```
+    #[must_use]
+    pub fn invalid_value(input: impl Into<String>) -> Self {
+        Self::with_input(ScErrorKind::InvalidValue, "value is invalid", input)
+    }
+
     /// Creates a log-cap-parse error for `input`.
+    ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::ScError;
+    ///
+    /// let error = ScError::log_cap_parse("5g");
+    /// assert!(error.is_log_cap_parse());
+    /// ```
     #[must_use]
     pub fn log_cap_parse(input: impl Into<String>) -> Self {
         Self::with_input(
@@ -98,12 +174,29 @@ impl ScError {
     }
 
     /// Creates an invalid-packet error with contextual `input`.
+    ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::ScError;
+    ///
+    /// let error = ScError::invalid_packet("unknown packet type");
+    /// assert!(error.is_invalid_packet());
+    /// ```
     #[must_use]
     pub fn invalid_packet(input: impl Into<String>) -> Self {
         Self::with_input(ScErrorKind::InvalidPacket, "packet is invalid", input)
     }
 
     /// Creates an invalid-packet error with a source error.
+    ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::ScError;
+    /// use std::io;
+    ///
+    /// let error = ScError::invalid_packet_with_source("bad packet", io::Error::other("decode"));
+    /// assert!(error.is_invalid_packet());
+    /// ```
     #[must_use]
     pub fn invalid_packet_with_source(
         input: impl Into<String>,
@@ -174,6 +267,12 @@ impl ScError {
         self.kind == ScErrorKind::InvalidPath
     }
 
+    /// Returns whether the error represents an invalid value.
+    #[must_use]
+    pub fn is_invalid_value(&self) -> bool {
+        self.kind == ScErrorKind::InvalidValue
+    }
+
     /// Returns whether the error represents a log-cap parse failure.
     #[must_use]
     pub fn is_log_cap_parse(&self) -> bool {
@@ -221,6 +320,7 @@ impl fmt::Display for ScErrorKind {
             Self::NoTty => "no-tty",
             Self::InvalidName => "invalid-name",
             Self::InvalidPath => "invalid-path",
+            Self::InvalidValue => "invalid-value",
             Self::LogCapParse => "log-cap-parse",
             Self::InvalidPacket => "invalid-packet",
         };
@@ -254,6 +354,9 @@ mod tests {
 
         let invalid_path = ScError::invalid_path(Path::new("relative/path"));
         assert!(invalid_path.is_invalid_path());
+
+        let invalid_value = ScError::invalid_value("bad");
+        assert!(invalid_value.is_invalid_value());
 
         let log_cap = ScError::log_cap_parse("bogus");
         assert!(log_cap.is_log_cap_parse());

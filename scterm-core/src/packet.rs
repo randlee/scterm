@@ -97,6 +97,15 @@ pub struct PushData {
 impl PushData {
     /// Creates a validated push payload.
     ///
+    /// # Examples
+    /// ```
+    /// use scterm_core::PushData;
+    ///
+    /// let payload = PushData::new(b"ping")?;
+    /// assert_eq!(payload.as_slice(), b"ping");
+    /// # Ok::<(), scterm_core::ScError>(())
+    /// ```
+    ///
     /// # Errors
     /// Returns [`ScError`] when `data` is longer than eight bytes.
     pub fn new(data: &[u8]) -> Result<Self, ScError> {

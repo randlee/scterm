@@ -110,7 +110,19 @@ impl AncestryChain {
     }
 }
 
-/// Derives the session ancestry environment variable name from `program`.
+/// Derives the ancestry environment variable name from a program path or basename.
+///
+/// The final path segment of `program` is used when `program` contains path
+/// separators. ASCII letters and digits are preserved, all other characters are
+/// normalized to `_`, and the `_SESSION` suffix is appended.
+///
+/// # Examples
+/// ```
+/// use scterm_core::session_env_var_name;
+///
+/// assert_eq!(session_env_var_name("scterm"), "SCTERM_SESSION");
+/// assert_eq!(session_env_var_name("/opt/bin/ssh2incus-atch"), "SSH2INCUS_ATCH_SESSION");
+/// ```
 #[must_use]
 pub fn session_env_var_name(program: &str) -> String {
     let base = Path::new(program)
