@@ -167,14 +167,13 @@ fn session_launcher_reports_exec_handshake_failures() -> Result<()> {
     ));
     let command = PtyCommand::new("__scterm_no_such_command__")?;
 
-    let error = match launcher.start(
+    let Err(error) = launcher.start(
         Session::new_resolved(path),
         &command,
         Some(WindowSize::new(24, 80, 0, 0)),
         NoopOutputObserver,
-    ) {
-        Ok(_) => panic!("bad command should fail startup"),
-        Err(error) => error,
+    ) else {
+        panic!("bad command should fail startup");
     };
 
     assert!(!error.to_string().is_empty());
