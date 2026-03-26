@@ -221,9 +221,9 @@ Application error policy:
 
 Structured logging policy:
 
-- use the sibling `sc-observability` workspace’s logging-only crate
-- do not adopt any higher-layer crate from the sibling `sc-observability`
-  workspace in Sprint 1
+- use a self-contained `AppLogger` implemented in `scterm-app` with
+  `serde_json` and `std::io`
+- do not add any external observability crate dependency in this repo
 - keep logger lifecycle and sink configuration in `scterm-app` or the binary,
   not in lower crates
 

@@ -77,6 +77,7 @@ jobs:
                -e 'agent.team.mail' \
                -e 'agent_team_mail' \
                -e 'ATM_HOME' \
+               -e '^use atm::' \
                -e '^use atm_' \
                -e 'extern crate atm_' \
                .; then

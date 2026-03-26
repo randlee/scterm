@@ -104,12 +104,11 @@ May depend on:
 
 - `scterm-core`
 - `scterm-unix`
-- `sc-observability`
 - one application error crate such as `anyhow`
 
 Must not depend on:
 
-- any higher-layer crate from the sibling `sc-observability` workspace
+- any external observability crate
 
 Must not know about:
 
