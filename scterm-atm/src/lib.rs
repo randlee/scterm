@@ -438,6 +438,54 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn poll_once_accepts_messages_addressed_to_the_configured_username(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let _path_lock = PATH_LOCK.lock().expect("PATH lock");
+        let tempdir = TempDir::new()?;
+        install_fake_atm(
+            tempdir.path(),
+            "#!/bin/sh\ncat <<'JSON'\n{\"messages\":[{\"from\":\"arch-term\",\"to\":\"codex-user\",\"text\":\"hello\",\"message_id\":\"msg-1\"}]}\nJSON\n",
+        )?;
+        let old_path = std::env::var_os("PATH");
+        set_path_with_fake_atm(tempdir.path(), old_path.as_deref())?;
+
+        let config = AtmConfig::new(SessionName::new("demo")?, tempdir.path().join("dedup.txt"))
+            .with_self_identity(SessionName::new("demo")?)
+            .with_username("codex-user");
+        let mut watcher = AtmWatcher::new(config)?;
+        let events = watcher.poll_once()?;
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].sender(), "arch-term");
+        assert_eq!(events[0].text(), "hello");
+
+        restore_path(old_path);
+        Ok(())
+    }
+
+    #[test]
+    fn poll_once_filters_messages_for_unknown_usernames() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let _path_lock = PATH_LOCK.lock().expect("PATH lock");
+        let tempdir = TempDir::new()?;
+        install_fake_atm(
+            tempdir.path(),
+            "#!/bin/sh\ncat <<'JSON'\n{\"messages\":[{\"from\":\"arch-term\",\"to\":\"other-user\",\"text\":\"hello\",\"message_id\":\"msg-2\"}]}\nJSON\n",
+        )?;
+        let old_path = std::env::var_os("PATH");
+        set_path_with_fake_atm(tempdir.path(), old_path.as_deref())?;
+
+        let config = AtmConfig::new(SessionName::new("demo")?, tempdir.path().join("dedup.txt"))
+            .with_self_identity(SessionName::new("demo")?)
+            .with_username("codex-user");
+        let mut watcher = AtmWatcher::new(config)?;
+        assert!(watcher.poll_once()?.is_empty());
+
+        restore_path(old_path);
+        Ok(())
+    }
+
     fn install_fake_atm(
         root: &std::path::Path,
         body: &str,
@@ -452,9 +500,19 @@ mod tests {
 
     fn restore_path(path: Option<std::ffi::OsString>) {
         if let Some(path) = path {
-            std::env::set_var("PATH", path);
+            // SAFETY: guarded by PATH_LOCK; these tests mutate PATH only while holding
+            // the process-wide mutex so no concurrent environment access occurs here.
+            #[allow(unsafe_code, reason = "test-only PATH mutation under PATH_LOCK")]
+            unsafe {
+                std::env::set_var("PATH", path);
+            }
         } else {
-            std::env::remove_var("PATH");
+            // SAFETY: guarded by PATH_LOCK; these tests mutate PATH only while holding
+            // the process-wide mutex so no concurrent environment access occurs here.
+            #[allow(unsafe_code, reason = "test-only PATH mutation under PATH_LOCK")]
+            unsafe {
+                std::env::remove_var("PATH");
+            }
         }
     }
 
@@ -467,7 +525,12 @@ mod tests {
             paths.extend(std::env::split_paths(old_path));
         }
         let joined: OsString = std::env::join_paths(paths)?;
-        std::env::set_var("PATH", joined);
+        // SAFETY: guarded by PATH_LOCK; these tests mutate PATH only while holding
+        // the process-wide mutex so no concurrent environment access occurs here.
+        #[allow(unsafe_code, reason = "test-only PATH mutation under PATH_LOCK")]
+        unsafe {
+            std::env::set_var("PATH", joined);
+        }
         Ok(())
     }
 }

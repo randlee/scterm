@@ -490,6 +490,7 @@ where
         self.log.clear()
     }
 
+    #[cfg(feature = "atm")]
     pub(crate) fn log_event(&self, target: &str, action: &str, message: &str) -> Result<()> {
         self.logger.emit(target, action, message)
     }

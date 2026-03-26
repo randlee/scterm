@@ -1,12 +1,18 @@
 //! Optional ATM bridge integration for the app layer.
 
-use crate::{AppLogger, MasterSession};
+use crate::MasterSession;
 use anyhow::Result;
-use scterm_core::{SessionName, SessionPath};
+use scterm_core::SessionPath;
 use std::path::Path;
 
 #[cfg(feature = "atm")]
+use crate::AppLogger;
+#[cfg(feature = "atm")]
+use scterm_core::SessionName;
+#[cfg(feature = "atm")]
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+#[cfg(feature = "atm")]
+use std::time::Duration;
 
 #[cfg(feature = "atm")]
 use scterm_atm::{AtmConfig, AtmError, AtmEvent, AtmWatcher};
@@ -67,6 +73,7 @@ pub fn start_atm_bridge(
                         logger.as_ref(),
                         &AtmError::ParseFailure("dropping malformed ATM payload".to_string()),
                     );
+                    std::thread::sleep(Duration::from_millis(200));
                 }
                 Err(error) => {
                     log_bridge_error(logger.as_ref(), &error);
