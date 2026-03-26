@@ -83,8 +83,8 @@ impl SessionPath {
     /// ```
     /// use scterm_core::SessionPath;
     ///
-    /// let path = SessionPath::new("/tmp/demo.sock")?;
-    /// assert_eq!(path.as_path().to_str(), Some("/tmp/demo.sock"));
+    /// let path = SessionPath::new("/run/scterm/demo.sock")?;
+    /// assert_eq!(path.as_path().to_str(), Some("/run/scterm/demo.sock"));
     /// # Ok::<(), scterm_core::ScError>(())
     /// ```
     ///
@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn session_path_must_be_absolute() {
         assert!(SessionPath::new("relative/path").is_err());
-        assert!(SessionPath::new(Path::new("/tmp/session")).is_ok());
+        assert!(SessionPath::new(Path::new("/run/scterm/session")).is_ok());
     }
 
     #[test]

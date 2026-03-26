@@ -332,7 +332,7 @@ where
         while let Some(input) = self.input_queue.pop_front() {
             let bytes = input.bytes;
             self.pty
-                .write(&bytes)
+                .write_all(&bytes)
                 .with_context(|| format!("write {:?} input into PTY", input.source))?;
             written += bytes.len();
         }
@@ -358,7 +358,7 @@ where
         for client in &mut self.clients {
             client
                 .stream
-                .write(bytes)
+                .write_all(bytes)
                 .context("broadcast PTY output to attached client")?;
             client
                 .stream
@@ -536,24 +536,40 @@ impl SessionLauncher {
             .socket_transport
             .bind(&path)
             .context("bind session control socket")?;
-        let pty = self
-            .pty_backend
-            .spawn(command, size)
-            .context("spawn PTY-backed child process")?;
+        let pty = match self.pty_backend.spawn(command, size) {
+            Ok(pty) => pty,
+            Err(error) => {
+                let _ = fs::remove_file(path.as_path());
+                return Err(error).context("spawn PTY-backed child process");
+            }
+        };
 
-        let readiness_probe = self
-            .socket_transport
-            .connect(&path)
-            .context("verify session socket readiness")?;
+        let readiness_probe = match self.socket_transport.connect(&path) {
+            Ok(probe) => probe,
+            Err(error) => {
+                let _ = fs::remove_file(path.as_path());
+                return Err(error).context("verify session socket readiness");
+            }
+        };
         drop(readiness_probe);
 
         let bound_socket = BoundSocket::new(&path);
         let pty_ready = PtyReady::new(&path);
         let client_ready = ClientReady::new(&path);
-        let handle = session
-            .start(bound_socket, pty_ready, client_ready)
-            .context("transition resolved session to running")?;
-        let master = MasterSession::new(path, listener, pty, &self.config, observer)?;
+        let handle = match session.start(bound_socket, pty_ready, client_ready) {
+            Ok(handle) => handle,
+            Err(error) => {
+                let _ = fs::remove_file(path.as_path());
+                return Err(error).context("transition resolved session to running");
+            }
+        };
+        let master = match MasterSession::new(path, listener, pty, &self.config, observer) {
+            Ok(master) => master,
+            Err(error) => {
+                let _ = fs::remove_file(handle.path().as_path());
+                return Err(error);
+            }
+        };
 
         Ok(StartedSession { handle, master })
     }

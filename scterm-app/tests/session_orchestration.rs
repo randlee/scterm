@@ -173,3 +173,60 @@ fn app_logger_writes_jsonl_events() -> Result<()> {
     assert!(contents.contains("\"action\":\"start\""));
     Ok(())
 }
+
+#[test]
+fn session_launcher_reports_exec_handshake_failures() -> Result<()> {
+    let tempdir = TempDir::new()?;
+    let path = SessionPath::new(tempdir.path().join("bad.sock"))?;
+    let launcher = SessionLauncher::new(MasterConfig::new(
+        RingSize::new(64)?,
+        LogCap::from_bytes(1024),
+        tempdir.path().join("app-log"),
+    ));
+    let command = PtyCommand::new("__scterm_no_such_command__")?;
+
+    let error = match launcher.start(
+        Session::new_resolved(path),
+        &command,
+        Some(WindowSize::new(24, 80, 0, 0)),
+        NoopOutputObserver,
+    ) {
+        Ok(_) => panic!("bad command should fail startup"),
+        Err(error) => error,
+    };
+
+    assert!(!error.to_string().is_empty());
+    assert!(!tempdir.path().join("bad.sock").exists());
+    Ok(())
+}
+
+#[test]
+fn attach_request_can_skip_ring_replay_after_log_history_is_covered() -> Result<()> {
+    let tempdir = TempDir::new()?;
+    let path = SessionPath::new(tempdir.path().join("session.sock"))?;
+    let launcher = SessionLauncher::new(MasterConfig::new(
+        RingSize::new(64)?,
+        LogCap::from_bytes(1024),
+        tempdir.path().join("app-log"),
+    ));
+    let command = PtyCommand::new("/bin/sh")?.arg("-c")?.arg("cat")?;
+    let started = launcher.start(
+        Session::new_resolved(path.clone()),
+        &command,
+        Some(WindowSize::new(24, 80, 0, 0)),
+        NoopOutputObserver,
+    )?;
+    let mut master = started.into_master();
+    master.record_pty_output(b"covered-history")?;
+
+    let client = std::thread::spawn(move || {
+        let transport = scterm_unix::UnixSocketTransport;
+        transport.connect(&path).expect("connect session client")
+    });
+    let stream = master.accept_client()?;
+    let ring = master.attach_client(stream, AttachRequest::new(true))?;
+    let _client = client.join().expect("join client");
+
+    assert!(ring.is_empty(), "ring replay should have been skipped");
+    Ok(())
+}

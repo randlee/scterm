@@ -153,7 +153,7 @@ mod tests {
     fn env_var_name_tracks_binary_basename() {
         assert_eq!(session_env_var_name("scterm"), "SCTERM_SESSION");
         assert_eq!(
-            session_env_var_name("/tmp/bin/ssh2incus-atch"),
+            session_env_var_name("/run/scterm/bin/ssh2incus-atch"),
             "SSH2INCUS_ATCH_SESSION"
         );
     }
@@ -168,9 +168,9 @@ mod tests {
 
     #[test]
     fn self_attach_detection_requires_exact_path_match() {
-        let chain = AncestryChain::parse("/tmp/a:/tmp/b").expect("parse chain");
-        let target = SessionPath::new("/tmp/b").expect("session path");
-        let distinct = SessionPath::new("/tmp/c").expect("session path");
+        let chain = AncestryChain::parse("/run/scterm/a:/run/scterm/b").expect("parse chain");
+        let target = SessionPath::new("/run/scterm/b").expect("session path");
+        let distinct = SessionPath::new("/run/scterm/c").expect("session path");
 
         assert!(chain.ensure_not_self_attach(&target).is_err());
         assert!(chain.ensure_not_self_attach(&distinct).is_ok());
@@ -179,8 +179,8 @@ mod tests {
     #[test]
     fn append_tracks_the_innermost_session() {
         let mut chain = AncestryChain::new();
-        let outer = SessionPath::new("/tmp/outer").expect("outer path");
-        let inner = SessionPath::new("/tmp/inner").expect("inner path");
+        let outer = SessionPath::new("/run/scterm/outer").expect("outer path");
+        let inner = SessionPath::new("/run/scterm/inner").expect("inner path");
 
         chain.append(outer);
         chain.append(inner.clone());

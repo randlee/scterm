@@ -56,7 +56,7 @@ impl ScError {
     /// use scterm_core::ScError;
     /// use std::path::Path;
     ///
-    /// let error = ScError::session_not_found(Path::new("/tmp/demo"));
+    /// let error = ScError::session_not_found(Path::new("/run/scterm/demo"));
     /// assert!(error.is_session_not_found());
     /// ```
     #[must_use]
@@ -71,7 +71,7 @@ impl ScError {
     /// use scterm_core::ScError;
     /// use std::path::Path;
     ///
-    /// let error = ScError::stale_socket(Path::new("/tmp/demo"));
+    /// let error = ScError::stale_socket(Path::new("/run/scterm/demo"));
     /// assert!(error.is_stale_socket());
     /// ```
     #[must_use]
@@ -86,7 +86,7 @@ impl ScError {
     /// use scterm_core::ScError;
     /// use std::path::Path;
     ///
-    /// let error = ScError::self_attach_loop(Path::new("/tmp/demo"));
+    /// let error = ScError::self_attach_loop(Path::new("/run/scterm/demo"));
     /// assert!(error.is_self_attach_loop());
     /// ```
     #[must_use]
@@ -335,14 +335,14 @@ mod tests {
 
     #[test]
     fn helper_predicates_match_their_constructor() {
-        let missing = ScError::session_not_found(Path::new("/tmp/missing"));
+        let missing = ScError::session_not_found(Path::new("/run/scterm/missing"));
         assert!(missing.is_session_not_found());
-        assert_eq!(missing.path(), Some(Path::new("/tmp/missing")));
+        assert_eq!(missing.path(), Some(Path::new("/run/scterm/missing")));
 
-        let stale = ScError::stale_socket(Path::new("/tmp/stale"));
+        let stale = ScError::stale_socket(Path::new("/run/scterm/stale"));
         assert!(stale.is_stale_socket());
 
-        let self_attach = ScError::self_attach_loop(Path::new("/tmp/loop"));
+        let self_attach = ScError::self_attach_loop(Path::new("/run/scterm/loop"));
         assert!(self_attach.is_self_attach_loop());
 
         let no_tty = ScError::no_tty();
