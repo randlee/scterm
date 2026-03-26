@@ -1,4 +1,8 @@
 //! Validated domain newtypes for `scterm-core`.
+#![allow(
+    clippy::missing_const_for_fn,
+    reason = "Const qualification is not part of the validated newtype API contract."
+)]
 
 use std::fmt;
 use std::num::NonZeroUsize;

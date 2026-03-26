@@ -1,4 +1,8 @@
 //! Ring-buffer support for persistent session catch-up.
+#![allow(
+    clippy::missing_const_for_fn,
+    reason = "Const qualification does not materially improve the ring-buffer API."
+)]
 
 use std::collections::VecDeque;
 

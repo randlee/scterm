@@ -1,4 +1,8 @@
 //! Session ancestry helpers for `scterm`.
+#![allow(
+    clippy::missing_const_for_fn,
+    reason = "Const qualification is not part of the ancestry helper contract."
+)]
 
 use std::path::{Path, PathBuf};
 
@@ -81,8 +85,7 @@ impl AncestryChain {
             .iter()
             .map(|path| {
                 path.file_name()
-                    .map(ToOwned::to_owned)
-                    .unwrap_or_else(|| path.as_path().display().to_string())
+                    .map_or_else(|| path.as_path().display().to_string(), ToOwned::to_owned)
             })
             .collect::<Vec<_>>()
             .join(" > ")

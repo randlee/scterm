@@ -1,4 +1,8 @@
 //! Client-to-master packet types for `scterm`.
+#![allow(
+    clippy::missing_const_for_fn,
+    reason = "Const qualification is not part of the packet API contract."
+)]
 
 use std::fmt;
 
@@ -96,7 +100,8 @@ impl PushData {
     /// # Errors
     /// Returns [`ScError`] when `data` is longer than eight bytes.
     pub fn new(data: &[u8]) -> Result<Self, ScError> {
-        let len = u8::try_from(data.len()).map_err(|_| ScError::invalid_packet("push length overflow"))?;
+        let len = u8::try_from(data.len())
+            .map_err(|_| ScError::invalid_packet("push length overflow"))?;
         if usize::from(len) > WINDOW_SIZE_BYTES {
             return Err(ScError::invalid_packet("push payload exceeds 8 bytes"));
         }
@@ -203,7 +208,9 @@ impl TryFrom<u8> for RedrawMethod {
             1 => Ok(Self::None),
             2 => Ok(Self::CtrlL),
             3 => Ok(Self::Winch),
-            _ => Err(ScError::invalid_packet(format!("invalid redraw method {value}"))),
+            _ => Err(ScError::invalid_packet(format!(
+                "invalid redraw method {value}"
+            ))),
         }
     }
 }
@@ -233,7 +240,9 @@ impl TryFrom<u8> for ClearMethod {
             0 => Ok(Self::Unspecified),
             1 => Ok(Self::None),
             2 => Ok(Self::Move),
-            _ => Err(ScError::invalid_packet(format!("invalid clear method {value}"))),
+            _ => Err(ScError::invalid_packet(format!(
+                "invalid clear method {value}"
+            ))),
         }
     }
 }
@@ -319,7 +328,9 @@ impl Packet {
                 WindowSize::from_payload(payload),
             ))),
             MSG_KILL => Ok(Self::Kill(KillRequest::new(bytes[1]))),
-            kind => Err(ScError::invalid_packet(format!("unknown packet type {kind}"))),
+            kind => Err(ScError::invalid_packet(format!(
+                "unknown packet type {kind}"
+            ))),
         }
     }
 }
@@ -360,8 +371,8 @@ impl fmt::Display for Packet {
 #[cfg(test)]
 mod tests {
     use super::{
-        AttachRequest, ClearMethod, KillRequest, Packet, PushData, RedrawMethod,
-        RedrawRequest, WindowSize, PACKET_SIZE,
+        AttachRequest, ClearMethod, KillRequest, Packet, PushData, RedrawMethod, RedrawRequest,
+        WindowSize, PACKET_SIZE,
     };
 
     #[test]

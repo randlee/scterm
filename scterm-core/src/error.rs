@@ -1,9 +1,13 @@
 //! Error types for `scterm-core`.
+#![allow(
+    clippy::missing_const_for_fn,
+    reason = "Const qualification is not part of the public error API."
+)]
 
 use std::backtrace::Backtrace;
 use std::error::Error as StdError;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScErrorKind {
@@ -22,10 +26,10 @@ enum ScErrorKind {
 pub struct ScError {
     kind: ScErrorKind,
     message: &'static str,
-    input: Option<String>,
-    path: Option<PathBuf>,
+    input: Option<Box<str>>,
+    path: Option<Box<Path>>,
     source_error: Option<Box<dyn StdError + Send + Sync + 'static>>,
-    backtrace: Backtrace,
+    backtrace: Box<Backtrace>,
 }
 
 impl fmt::Display for ScError {
@@ -86,7 +90,11 @@ impl ScError {
     /// Creates a log-cap-parse error for `input`.
     #[must_use]
     pub fn log_cap_parse(input: impl Into<String>) -> Self {
-        Self::with_input(ScErrorKind::LogCapParse, "log cap could not be parsed", input)
+        Self::with_input(
+            ScErrorKind::LogCapParse,
+            "log cap could not be parsed",
+            input,
+        )
     }
 
     /// Creates an invalid-packet error with contextual `input`.
@@ -126,7 +134,6 @@ impl ScError {
     }
 
     /// Returns the captured backtrace.
-    #[must_use]
     pub fn backtrace(&self) -> &Backtrace {
         &self.backtrace
     }
@@ -186,20 +193,20 @@ impl ScError {
             input: None,
             path: None,
             source_error: None,
-            backtrace: Backtrace::capture(),
+            backtrace: Box::new(Backtrace::capture()),
         }
     }
 
     fn with_input(kind: ScErrorKind, message: &'static str, input: impl Into<String>) -> Self {
         Self {
-            input: Some(input.into()),
+            input: Some(input.into().into_boxed_str()),
             ..Self::new(kind, message)
         }
     }
 
     fn with_path(kind: ScErrorKind, message: &'static str, path: &Path) -> Self {
         Self {
-            path: Some(path.to_path_buf()),
+            path: Some(path.to_path_buf().into_boxed_path()),
             ..Self::new(kind, message)
         }
     }

@@ -1,4 +1,8 @@
 //! Coarse typestate markers for session and attach lifecycles.
+#![allow(
+    clippy::missing_const_for_fn,
+    reason = "Const qualification is not part of the typestate API contract."
+)]
 
 use std::marker::PhantomData;
 

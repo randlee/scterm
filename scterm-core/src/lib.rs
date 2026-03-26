@@ -16,15 +16,15 @@ pub use ancestry::{session_env_var_name, AncestryChain};
 pub use error::ScError;
 #[doc(inline)]
 pub use packet::{
-    AttachRequest, ClearMethod, KillRequest, Packet, PushData, RedrawMethod,
-    RedrawRequest, WindowSize, PACKET_SIZE, WINDOW_SIZE_BYTES,
+    AttachRequest, ClearMethod, KillRequest, Packet, PushData, RedrawMethod, RedrawRequest,
+    WindowSize, PACKET_SIZE, WINDOW_SIZE_BYTES,
 };
 #[doc(inline)]
 pub use ring::RingBuffer;
 #[doc(inline)]
 pub use state::{
-    AttachClient, Connecting, Detached, Live, LogReplaying, Resolved,
-    RingReplaying, Running, Session, Stale,
+    AttachClient, Connecting, Detached, Live, LogReplaying, Resolved, RingReplaying, Running,
+    Session, Stale,
 };
 #[doc(inline)]
 pub use types::{LogCap, RingSize, SessionName, SessionPath};
