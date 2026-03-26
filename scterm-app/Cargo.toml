@@ -1,0 +1,17 @@
+[package]
+name = "scterm-app"
+version = "0.1.0"
+description.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+categories.workspace = true
+readme.workspace = true
+repository.workspace = true
+
+[dependencies]
+scterm-core = { path = "../scterm-core" }
+scterm-unix = { path = "../scterm-unix" }
+
+[lints]
+workspace = true

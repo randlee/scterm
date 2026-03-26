@@ -1,0 +1,25 @@
+[package]
+name = "scterm-unix"
+version = "0.1.0"
+description.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+categories.workspace = true
+readme.workspace = true
+repository.workspace = true
+
+[dependencies]
+scterm-core = { path = "../scterm-core" }
+
+[lints.rust]
+missing_docs = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unsafe_code = "allow"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
