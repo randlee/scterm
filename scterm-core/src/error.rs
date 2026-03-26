@@ -335,14 +335,16 @@ mod tests {
 
     #[test]
     fn helper_predicates_match_their_constructor() {
-        let missing = ScError::session_not_found(Path::new("/run/scterm/missing"));
+        let missing_path = std::env::temp_dir().join("scterm-error-missing");
+        let missing = ScError::session_not_found(&missing_path);
         assert!(missing.is_session_not_found());
-        assert_eq!(missing.path(), Some(Path::new("/run/scterm/missing")));
+        assert_eq!(missing.path(), Some(missing_path.as_path()));
 
-        let stale = ScError::stale_socket(Path::new("/run/scterm/stale"));
+        let stale = ScError::stale_socket(&std::env::temp_dir().join("scterm-error-stale"));
         assert!(stale.is_stale_socket());
 
-        let self_attach = ScError::self_attach_loop(Path::new("/run/scterm/loop"));
+        let self_attach =
+            ScError::self_attach_loop(&std::env::temp_dir().join("scterm-error-loop"));
         assert!(self_attach.is_self_attach_loop());
 
         let no_tty = ScError::no_tty();

@@ -593,6 +593,132 @@ fn self_attach_prevention_uses_the_session_ancestry_env_var() -> Result<()> {
 }
 
 #[test]
+fn current_subcommand_prints_the_innermost_session_name() -> Result<()> {
+    let env = TestEnv::new()?;
+    let session_path = env.session_socket("current-demo");
+    fs::create_dir_all(session_path.parent().context("session parent")?)?;
+
+    let output = env
+        .command()
+        .env("SCTERM_SESSION", &session_path)
+        .arg("current")
+        .output()
+        .context("run current subcommand")?;
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(stdout(&output).trim(), "current-demo");
+    Ok(())
+}
+
+#[test]
+fn legacy_modes_execute_the_compat_surface() -> Result<()> {
+    let env = TestEnv::new()?;
+
+    let list = env.run(&["-l"])?;
+    assert_eq!(list.status.code(), Some(0));
+
+    let current_path = env.session_socket("legacy-current");
+    fs::create_dir_all(current_path.parent().context("session parent")?)?;
+    let current = env
+        .command()
+        .env("SCTERM_SESSION", &current_path)
+        .arg("-i")
+        .output()
+        .context("run legacy current mode")?;
+    assert_eq!(current.status.code(), Some(0));
+    assert_eq!(stdout(&current).trim(), "legacy-current");
+
+    let start = env.run(&["-n", "legacy-start", "sleep", "999"])?;
+    assert_eq!(start.status.code(), Some(0));
+    env.wait_for_socket("legacy-start")?;
+
+    let mut attach = env.spawn_pty(&["-a", "legacy-start"])?;
+    wait_for_attached(&env, "legacy-start")?;
+    attach.send(&[DETACH_CHAR])?;
+    assert!(attach.wait_with_output(Duration::from_secs(3))?.0.success());
+
+    let push = env.run_with_input(&["-p", "legacy-start"], b"legacy-push\n")?;
+    assert_eq!(push.status.code(), Some(0));
+    wait_for(
+        || {
+            fs::read_to_string(env.session_log("legacy-start"))
+                .is_ok_and(|text| text.contains("legacy-push"))
+        },
+        Duration::from_secs(3),
+        "legacy push to reach the log",
+    )?;
+
+    let mut create = env.spawn_pty(&[
+        "-c",
+        "legacy-new",
+        "/bin/sh",
+        "-c",
+        "printf 'legacy-new-ok\\n'; cat",
+    ])?;
+    env.wait_for_socket("legacy-new")?;
+    create.read_until("legacy-new-ok", Duration::from_secs(5))?;
+    wait_for_attached(&env, "legacy-new")?;
+    create.send(&[DETACH_CHAR])?;
+    assert!(create.wait_with_output(Duration::from_secs(3))?.0.success());
+
+    let mut open = env.spawn_pty(&["-A", "legacy-new"])?;
+    wait_for_attached(&env, "legacy-new")?;
+    open.read_until("legacy-new-ok", Duration::from_secs(5))?;
+    open.send(&[DETACH_CHAR])?;
+    assert!(open.wait_with_output(Duration::from_secs(3))?.0.success());
+
+    let mut run = env.spawn_background(&["-N", "legacy-run", "sleep", "999"])?;
+    env.wait_for_socket("legacy-run")?;
+
+    let kill_start = env.run(&["-k", "legacy-start"])?;
+    assert_eq!(kill_start.status.code(), Some(0));
+    env.wait_for_socket_removed("legacy-start")?;
+
+    let kill_new = env.run(&["-k", "legacy-new"])?;
+    assert_eq!(kill_new.status.code(), Some(0));
+    env.wait_for_socket_removed("legacy-new")?;
+
+    let kill_run = env.run(&["-k", "legacy-run"])?;
+    assert_eq!(kill_run.status.code(), Some(0));
+    env.wait_for_socket_removed("legacy-run")?;
+    let _ = run.wait();
+
+    Ok(())
+}
+
+#[test]
+fn sigwinch_is_forwarded_from_the_attach_client_to_the_child_process() -> Result<()> {
+    let env = TestEnv::new()?;
+    let size_path = env.temp_path("sigwinch-size.txt");
+    let ready_path = env.temp_path("sigwinch-ready.txt");
+    let command = format!(
+        "trap 'stty size > {}' WINCH; printf ready > {}; while :; do sleep 1; done",
+        size_path.display(),
+        ready_path.display()
+    );
+
+    let start = env.run(&["start", "sigwinch", "/bin/sh", "-c", &command])?;
+    assert!(start.status.success(), "{}", output_text(&start));
+    env.wait_for_socket("sigwinch")?;
+    TestEnv::wait_for_file_contains(&ready_path, "ready")?;
+
+    let mut attach = env.spawn_pty(&["attach", "sigwinch"])?;
+    wait_for_attached(&env, "sigwinch")?;
+    kill(attach.pid(), Signal::SIGWINCH)?;
+
+    wait_for(
+        || fs::read_to_string(&size_path).is_ok_and(|text| text.split_whitespace().count() == 2),
+        Duration::from_secs(3),
+        "SIGWINCH forwarding to child process",
+    )?;
+
+    attach.send(&[DETACH_CHAR])?;
+    assert!(attach.wait_with_output(Duration::from_secs(3))?.0.success());
+    env.cleanup_session("sigwinch");
+    Ok(())
+}
+
+#[test]
 fn kill_session_grace_reports_stopped() -> Result<()> {
     let env = TestEnv::new()?;
 

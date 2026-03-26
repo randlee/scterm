@@ -233,7 +233,6 @@ impl fmt::Display for RingSize {
 #[cfg(test)]
 mod tests {
     use super::{LogCap, RingSize, SessionName, SessionPath};
-    use std::path::Path;
 
     #[test]
     fn session_name_rejects_invalid_inputs() {
@@ -246,7 +245,8 @@ mod tests {
     #[test]
     fn session_path_must_be_absolute() {
         assert!(SessionPath::new("relative/path").is_err());
-        assert!(SessionPath::new(Path::new("/run/scterm/session")).is_ok());
+        let session = std::env::temp_dir().join("scterm-types-session");
+        assert!(SessionPath::new(session).is_ok());
     }
 
     #[test]

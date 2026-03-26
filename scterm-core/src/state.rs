@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn session_typestate_wraps_a_validated_path() {
-        let path = SessionPath::new("/run/scterm/session").expect("session path");
+        let path = unique_socket_path("session-typestate");
         let session = Session::<Resolved>::new_resolved(path.clone());
 
         assert_eq!(session.path(), &path);
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn attach_client_typestate_wraps_a_validated_path() {
-        let path = SessionPath::new("/run/scterm/session").expect("session path");
+        let path = unique_socket_path("attach-client-typestate");
         let client = AttachClient::<LogReplaying>::new_log_replaying(path.clone());
 
         assert_eq!(client.path(), &path);
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn session_transitions_consume_and_preserve_the_path() {
-        let path = SessionPath::new("/run/scterm/session").expect("session path");
+        let path = unique_socket_path("session-transitions");
         let running = Session::<Resolved>::new_resolved(path.clone())
             .start(
                 BoundSocket::new(&path),
@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn attach_client_transitions_consume_and_preserve_the_path() {
-        let path = SessionPath::new("/run/scterm/session").expect("session path");
+        let path = unique_socket_path("attach-client-transitions");
 
         let live_from_ring = AttachClient::<LogReplaying>::new_log_replaying(path.clone())
             .connect()
@@ -377,8 +377,8 @@ mod tests {
 
     #[test]
     fn start_rejects_readiness_artifacts_for_the_wrong_path() {
-        let path = SessionPath::new("/run/scterm/session").expect("session path");
-        let wrong_path = SessionPath::new("/run/scterm/other").expect("wrong path");
+        let path = unique_socket_path("start-rejects-path");
+        let wrong_path = unique_socket_path("start-rejects-wrong-path");
         let session = Session::<Resolved>::new_resolved(path);
 
         let error = session
