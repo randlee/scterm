@@ -77,8 +77,8 @@ jobs:
                -e 'agent.team.mail' \
                -e 'agent_team_mail' \
                -e 'ATM_HOME' \
-               -e '^use atm::' \
-               -e '^use atm_' \
+               -e 'use atm::' \
+               -e 'use atm_' \
                -e 'extern crate atm_' \
                .; then
             echo "ERROR: ATM crate dependency or ATM_HOME reference found in scterm source."
