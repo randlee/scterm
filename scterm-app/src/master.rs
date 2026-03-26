@@ -349,7 +349,7 @@ where
     /// Records PTY output into the ring and log, then broadcasts if attached.
     ///
     /// # Errors
-    /// Returns an error when the persistent log append or any client write fails.
+    /// Returns an error when the persistent log append or attached-state updates fail.
     pub fn record_pty_output(&mut self, bytes: &[u8]) -> Result<BroadcastSummary> {
         self.ring.push(bytes);
         self.log.append(bytes)?;
@@ -361,15 +361,20 @@ where
             });
         }
 
+        let mut failed_client_ids = Vec::new();
         for client in &mut self.clients {
-            client
+            if client
                 .stream
                 .write_all(bytes)
-                .context("broadcast PTY output to attached client")?;
-            client
-                .stream
-                .flush()
-                .context("flush PTY output broadcast")?;
+                .and_then(|()| client.stream.flush())
+                .is_err()
+            {
+                failed_client_ids.push(client.id);
+            }
+        }
+
+        for client_id in failed_client_ids {
+            self.detach_client_by_id(client_id)?;
         }
 
         Ok(BroadcastSummary {

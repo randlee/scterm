@@ -5,7 +5,6 @@
 )]
 
 use std::marker::PhantomData;
-use std::{io::ErrorKind, os::unix::net::UnixStream};
 
 use crate::SessionPath;
 
@@ -145,25 +144,6 @@ impl Session<Resolved> {
             _state: PhantomData,
         })
     }
-
-    /// Checks whether the resolved session path has gone stale.
-    ///
-    /// # Errors
-    /// Returns `Err(Session<Stale>)` when the path resolves to a stale session.
-    pub fn check_stale(self) -> Result<Self, Session<Stale>> {
-        match UnixStream::connect(self.path.as_path()) {
-            Ok(stream) => {
-                drop(stream);
-                Ok(self)
-            }
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(self),
-            Err(error) if error.kind() == ErrorKind::ConnectionRefused => Err(Session {
-                path: self.path,
-                _state: PhantomData,
-            }),
-            Err(_) => Ok(self),
-        }
-    }
 }
 
 impl Session<Stale> {
@@ -294,21 +274,6 @@ mod tests {
     };
     use crate::SessionPath;
     use std::marker::PhantomData;
-    use std::os::unix::net::UnixListener;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_socket_path(label: &str) -> SessionPath {
-        let path = std::env::temp_dir().join(format!(
-            "scterm-core-state-{label}-{}-{}.sock",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system time before unix epoch")
-                .as_nanos()
-        ));
-        let _ = std::fs::remove_file(&path);
-        SessionPath::new(path).expect("session path")
-    }
 
     #[test]
     fn session_typestate_wraps_a_validated_path() {
@@ -342,18 +307,13 @@ mod tests {
 
         assert_eq!(running_path, path);
 
-        let resolved = Session::<Resolved>::new_resolved(running_path.clone())
-            .check_stale()
-            .expect("resolved transition");
-        assert_eq!(resolved.into_path(), running_path);
-
         let recovered = Session::<Stale> {
-            path: path.clone(),
+            path: running_path.clone(),
             _state: PhantomData,
         }
         .recover()
         .expect("recover transition");
-        assert_eq!(recovered.into_path(), path);
+        assert_eq!(recovered.into_path(), running_path);
     }
 
     #[test]
@@ -390,47 +350,6 @@ mod tests {
             .expect_err("mismatched artifacts must fail");
 
         assert!(error.is_invalid_value());
-    }
-
-    #[test]
-    fn check_stale_reports_missing_socket_as_resolved() {
-        let path = unique_socket_path("missing");
-        let resolved = Session::<Resolved>::new_resolved(path.clone())
-            .check_stale()
-            .expect("missing socket is not stale");
-
-        assert_eq!(
-            resolved.into_path().as_path().file_name(),
-            path.as_path().file_name()
-        );
-    }
-
-    #[test]
-    fn check_stale_reports_listening_socket_as_resolved() {
-        let path = unique_socket_path("live");
-        let listener = UnixListener::bind(path.as_path()).expect("bind live socket");
-
-        let resolved = Session::<Resolved>::new_resolved(path.clone())
-            .check_stale()
-            .expect("listening socket is not stale");
-
-        assert_eq!(resolved.into_path(), path);
-        drop(listener);
-        let _ = std::fs::remove_file(path.as_path());
-    }
-
-    #[test]
-    fn check_stale_reports_connection_refused_as_stale() {
-        let path = unique_socket_path("stale");
-        let listener = UnixListener::bind(path.as_path()).expect("bind stale socket");
-        drop(listener);
-
-        let stale = Session::<Resolved>::new_resolved(path.clone())
-            .check_stale()
-            .expect_err("unbound socket path must be stale");
-
-        assert_eq!(stale.into_path(), path);
-        let _ = std::fs::remove_file(path.as_path());
     }
 
     #[test]

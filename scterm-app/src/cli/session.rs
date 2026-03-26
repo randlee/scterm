@@ -73,6 +73,13 @@ fn usable_home_dir() -> Option<PathBuf> {
     env::var_os("HOME")
         .filter(|home| !home.is_empty() && home != "/")
         .map(PathBuf::from)
+        .or_else(|| {
+            nix::unistd::User::from_uid(nix::unistd::geteuid())
+                .ok()
+                .flatten()
+                .map(|user| user.dir)
+                .filter(|home| !home.as_os_str().is_empty() && home != Path::new("/"))
+        })
 }
 
 pub(super) fn app_log_root_for(path: &SessionPath) -> PathBuf {

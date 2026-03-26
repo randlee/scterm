@@ -71,7 +71,7 @@ pub fn start_atm_bridge(
                 Err(AtmError::ParseFailure(_)) => {
                     log_bridge_error(
                         logger.as_ref(),
-                        &AtmError::ParseFailure("dropping malformed ATM payload".to_string()),
+                        &AtmError::CliFailure("dropping malformed ATM payload".to_string()),
                     );
                     std::thread::sleep(Duration::from_millis(200));
                 }

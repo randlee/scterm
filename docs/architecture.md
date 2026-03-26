@@ -796,7 +796,6 @@ pub struct Session<S> {
 
 impl Session<Resolved> {
     pub fn start(self, ...) -> Result<Session<Running>, ScError> { ... }
-    pub fn check_stale(self) -> Result<Session<Resolved>, Session<Stale>> { ... }
 }
 
 impl Session<Stale> {

@@ -125,16 +125,19 @@ impl AtmEvent {
 pub enum AtmError {
     /// The `atm` CLI is not available in `PATH`.
     #[error("atm CLI unavailable: {0}")]
-    Unavailable(String),
+    Unavailable(#[source] std::io::Error),
+    /// Launching the `atm` CLI failed before it returned a status.
+    #[error("atm CLI I/O failure: {0}")]
+    CliIo(#[source] std::io::Error),
     /// The `atm` CLI returned a non-timeout failure.
     #[error("atm CLI failed: {0}")]
     CliFailure(String),
     /// The CLI output could not be parsed as a valid ATM read response.
     #[error("atm CLI parse failure: {0}")]
-    ParseFailure(String),
+    ParseFailure(#[source] serde_json::Error),
     /// Local de-duplication state could not be loaded or persisted.
     #[error("ATM dedup persistence failed: {0}")]
-    DedupPersistence(String),
+    DedupPersistence(#[source] std::io::Error),
 }
 
 /// Blocking subprocess watcher over `atm read --json --timeout ...`.
@@ -170,9 +173,9 @@ impl AtmWatcher {
             .output()
             .map_err(|error| {
                 if error.kind() == std::io::ErrorKind::NotFound {
-                    AtmError::Unavailable(error.to_string())
+                    AtmError::Unavailable(error)
                 } else {
-                    AtmError::CliFailure(error.to_string())
+                    AtmError::CliIo(error)
                 }
             })?;
 
@@ -191,8 +194,8 @@ impl AtmWatcher {
     }
 
     fn parse_output(&mut self, bytes: &[u8]) -> Result<Vec<AtmEvent>, AtmError> {
-        let response: RawReadResponse = serde_json::from_slice(bytes)
-            .map_err(|error| AtmError::ParseFailure(error.to_string()))?;
+        let response: RawReadResponse =
+            serde_json::from_slice(bytes).map_err(AtmError::ParseFailure)?;
         let mut events = Vec::new();
 
         for mut message in response.messages {
@@ -287,11 +290,10 @@ fn load_dedup(path: &Path) -> Result<HashSet<String>, AtmError> {
         return Ok(HashSet::new());
     }
 
-    let file =
-        fs::File::open(path).map_err(|error| AtmError::DedupPersistence(error.to_string()))?;
+    let file = fs::File::open(path).map_err(AtmError::DedupPersistence)?;
     let mut delivered = HashSet::new();
     for line in BufReader::new(file).lines() {
-        let line = line.map_err(|error| AtmError::DedupPersistence(error.to_string()))?;
+        let line = line.map_err(AtmError::DedupPersistence)?;
         if !line.is_empty() {
             delivered.insert(line);
         }
@@ -301,15 +303,14 @@ fn load_dedup(path: &Path) -> Result<HashSet<String>, AtmError> {
 
 fn persist_dedup(path: &Path, message_id: &str) -> Result<(), AtmError> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| AtmError::DedupPersistence(error.to_string()))?;
+        fs::create_dir_all(parent).map_err(AtmError::DedupPersistence)?;
     }
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
-        .map_err(|error| AtmError::DedupPersistence(error.to_string()))?;
-    writeln!(file, "{message_id}").map_err(|error| AtmError::DedupPersistence(error.to_string()))
+        .map_err(AtmError::DedupPersistence)?;
+    writeln!(file, "{message_id}").map_err(AtmError::DedupPersistence)
 }
 
 #[cfg(test)]

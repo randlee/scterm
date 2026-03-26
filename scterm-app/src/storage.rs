@@ -139,6 +139,22 @@ pub fn log_path_for_session(session_path: &SessionPath) -> PathBuf {
     )
 }
 
+/// Derives the app-layer clear-request marker path for `session_path`.
+#[must_use]
+pub fn clear_request_path_for(session_path: &SessionPath) -> PathBuf {
+    let socket_path = session_path.as_path();
+    let mut file_name = socket_path.file_name().map_or_else(
+        || "session".to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    file_name.push_str(".clear");
+
+    socket_path.parent().map_or_else(
+        || PathBuf::from(file_name.clone()),
+        |parent| parent.join(file_name.clone()),
+    )
+}
+
 /// Returns whether the session socket is marked as attached.
 ///
 /// # Errors
