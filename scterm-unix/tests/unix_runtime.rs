@@ -40,20 +40,12 @@ fn socket_transport_supports_bind_connect_accept_and_close() {
 #[test]
 fn socket_transport_uses_chdir_indirection_for_long_paths() {
     let tempdir = TempDir::new().expect("tempdir");
-    let long_dir = tempdir
-        .path()
-        .join("very")
-        .join("long")
-        .join("socket")
-        .join("path")
-        .join("for")
-        .join("scterm")
-        .join("unix")
-        .join("transport");
+    let prefix_len = tempdir.path().as_os_str().as_bytes().len();
+    let padding = "x".repeat(108usize.saturating_sub(prefix_len) + 10);
+    let long_dir = tempdir.path().join(padding);
     fs::create_dir_all(&long_dir).expect("create long directory");
 
-    let long_name = "socket";
-    let full_path = long_dir.join(long_name);
+    let full_path = long_dir.join("s.sock");
     assert!(full_path.as_os_str().as_bytes().len() > 107);
 
     let session_path = SessionPath::new(full_path.clone()).expect("session path");
