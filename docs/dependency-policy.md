@@ -71,7 +71,7 @@ Allowed:
 Forbidden:
 
 - ATM libraries
-- any higher-layer crate from the sibling `sc-observability` workspace
+- `sc-observability` or any crate from the sibling `sc-observability` workspace
 
 ### `scterm-app`
 

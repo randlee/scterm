@@ -5,6 +5,12 @@
 This document maps `atch` compatibility requirements to target ownership and
 tests so Sprint 1 does not drift into “similar but different” behavior.
 
+Source-file note:
+
+- `atch.c` is the main CLI entry point
+- `attach.c` is the client-side attach/detach implementation
+- `master.c` is the master/server loop
+
 ## Matrix
 
 | Behavior | `atch` source of truth | Target owner | Primary test layer |

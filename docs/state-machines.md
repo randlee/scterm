@@ -9,12 +9,20 @@ ATM extension.
 
 ```text
 Resolved -> Starting -> Running -> Exiting -> Exited
+Resolved -> Stale
 ```
 
 Rules:
 
 - only `Resolved` may transition to `Starting`
 - only `Starting` may transition to `Running` or startup failure
+- `Resolved -> Stale` occurs only when the socket file exists and `connect()`
+  returns `ECONNREFUSED`
+- `Stale` is terminal for the detection path; recovery removes the stale socket
+  and creates a fresh `Resolved` instance
+- `Resolved`, `Running`, and `Stale` are the coarse public typestate states per
+  `REQ-RBP-003`; `Starting`, `Exiting`, and `Exited` are internal operational
+  phases and need not be public typestate
 - only `Running` owns a live PTY and control socket
 - `Exited` is terminal
 
@@ -23,7 +31,6 @@ Rules:
 ```text
 LogReplaying -> Connecting -> RingReplaying -> Live
 Connecting -> Live
-Live -> Suspended -> Live
 Live -> Detached
 Live -> Exited
 ```
@@ -33,6 +40,9 @@ Rules:
 - log replay precedes socket connection because it reads the on-disk file directly
 - log replay may be skipped when no log exists
 - ring replay is a subphase between socket connect and live attach
+- suspend (`Ctrl-Z` / detach-suspend key) first detaches the client; on process
+  resume, the user reattaches via a new `Connecting` cycle rather than
+  returning to a distinct `Suspended` state
 - `Detached` and `Exited` are terminal for the client instance
 
 ## Client Attachment State

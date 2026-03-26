@@ -29,8 +29,12 @@ Typical conditions:
 - invalid session name
 - invalid path
 - bad log-cap parse
-- ancestry/self-attach issues
+- stale socket detected (socket file exists, `connect()` returns `ECONNREFUSED`)
+- ancestry derivation and self-attach predicate failures
 - protocol validation issues
+
+`scterm-core` owns the ancestry derivation rules and the self-attach prevention
+predicate itself, not just the shared error type used to report those failures.
 
 ## `scterm-unix`
 

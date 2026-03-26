@@ -24,6 +24,8 @@ Done when:
 
 - crate layout matches `crate-boundaries.md`
 - dependency policy is reflected in `Cargo.toml`
+- all three Sprint 1 crates (`scterm-core`, `scterm-unix`, `scterm-app`)
+  compile as empty lib crates
 - no code exists outside the approved crate plan
 
 ## Phase 1: Core Contracts
@@ -68,12 +70,15 @@ Deliver in `scterm-app`:
 - ring replay orchestration
 - PTY input serialization
 - structured logging setup via `sc-observability`
+- no active Sprint 1 output-observer behavior beyond a reserved passive hook
 
 Done when:
 
 - master is the only PTY owner
 - app owns logger lifecycle and structured logging configuration
 - lower crates remain logging-implementation-agnostic
+- any reserved output-observer hook is passive, app-layer only, and carries no
+  Sprint 1 behavioral obligations
 
 ## Phase 4: CLI and Compatibility Surface
 

@@ -97,6 +97,7 @@ Owns:
 - `atch` compatibility behavior
 - structured logging integration
 - PTY write ordering policy
+- the only serialized write path into the PTY file descriptor
 - application-level error boundary
 
 May depend on:

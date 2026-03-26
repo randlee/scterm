@@ -164,7 +164,8 @@ Owns:
 - session path resolution rules;
 - session ancestry/env-var derivation;
 - ring buffer implementation;
-- sanitized inbound message envelope types;
+- ATM-independent synthesized-input request types, only if a shared domain type
+  is needed at all;
 - shared error and result types that are independent of concrete I/O backends.
 
 Must not depend on:
@@ -330,7 +331,15 @@ The master should expose one explicit serialized input path, conceptually:
 - `enqueue_inbound_message`
 
 Internally these may share one queue, but architecturally they are one ordered
-stream into the PTY.
+stream into the PTY. These enqueue operations are the only allowed path into
+the PTY write file descriptor, and the serialization mechanism is owned
+entirely by `scterm-app`.
+
+Output observation (tool-call tap) is deferred from Sprint 1. A hook point may
+be reserved only at the app layer, at the post-PTY-read / pre-broadcast tee
+point in the master read loop. It must be observe-only, non-blocking, and must
+not mutate or backpressure the PTY stream, the persistent log, or client
+broadcast.
 
 ### Attach Client
 
@@ -416,13 +425,25 @@ the master does not reinterpret the terminal stream.
 4. Master replays ring history if needed.
 5. Live PTY output resumes.
 
+### Startup Readiness
+
+The session may be considered started only after both of these conditions hold:
+
+- the PTY child process has been spawned successfully
+- the control socket is bound and connectable
+
+This rule applies to detached `start` semantics and to any internal readiness
+handshake used between the CLI process and the master.
+
 ### Stale Socket Definition
 
 A socket is **stale** when the socket file exists on the filesystem but no
 master process is listening on it. This is detected by attempting to connect:
-if `connect()` returns `ECONNREFUSED` (or the file exists but `connect()`
-fails), the socket is stale. A missing socket file is not a stale socket — it
-is an absent session.
+if `connect()` returns `ECONNREFUSED`, the socket is stale. A missing socket
+file is not a stale socket — it is an absent session.
+
+No other `connect()` error implies stale recovery. Errors such as `ETIMEDOUT`,
+`EPERM`, or `ENOTSOCK` are hard failures and remain ordinary command errors.
 
 Stale sockets arise when the master process exits without cleaning up (e.g.
 crash, power loss, SIGKILL). The log file and session directory remain valid
@@ -431,7 +452,7 @@ after a stale socket is detected and log replay must still be possible.
 ### Stale Session Recovery
 
 1. CLI or client attempts `connect()` on the session socket.
-2. `connect()` fails with `ECONNREFUSED` → socket is stale.
+2. `connect()` returns `ECONNREFUSED` → socket is stale.
 3. Client replays the on-disk log if present (history is still valid).
 4. Default open mode removes the stale socket file and creates a fresh session.
 5. `attach` command fails with a clear error indicating a stale session was
@@ -720,7 +741,7 @@ internal phase into type noise.
 ```text
 Session (master side):
   Resolved -> Running
-  Resolved -> Stale        (socket file exists but connect() fails)
+  Resolved -> Stale        (socket file exists and connect() returns ECONNREFUSED)
 
 Attach client:
   LogReplaying -> Connecting -> RingReplaying -> Live -> Detached
@@ -736,6 +757,9 @@ is detected as stale. The caller must decide whether to remove the stale socket
 and create a fresh `Session<Resolved>` (default open mode) or fail
 (`attach` command).
 
+`Starting`, `Exiting`, and `Exited` are valid internal operational phases, but
+the coarse public typestate states remain `Resolved`, `Running`, and `Stale`.
+
 Replay internals may stay private implementation detail if that keeps the API
 clearer, but public lifecycle transitions should be consuming transitions rather
 than ad-hoc mutable state checks.
@@ -750,7 +774,7 @@ pub struct Session<S> {
 
 impl Session<Resolved> {
     pub fn start(self, ...) -> Result<Session<Running>, ScError> { ... }
-    pub fn check_stale(self) -> Result<Session<Running>, Session<Stale>> { ... }
+    pub fn check_stale(self) -> Result<Session<Resolved>, Session<Stale>> { ... }
 }
 
 impl Session<Stale> {

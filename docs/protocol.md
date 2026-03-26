@@ -54,6 +54,11 @@ interpreter.
 
 ## Packet Semantics
 
+The `len` field serves different semantic roles depending on packet type: a
+byte count for `Push`, a boolean flag for `Attach`, a method enum for
+`Redraw`, and a signal value for `Kill`. Treat each packet type's semantics
+independently.
+
 ### `Push`
 
 - `len` is the number of valid bytes in `payload`
