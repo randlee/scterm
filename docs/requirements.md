@@ -4,6 +4,20 @@
 
 This document defines the product requirements for `scterm`.
 
+Related documents:
+
+- `architecture.md`
+- `crate-boundaries.md`
+- `dependency-policy.md`
+- `implementation-plan.md`
+- `compatibility-matrix.md`
+- `protocol.md`
+- `state-machines.md`
+- `error-model.md`
+- `testing-strategy.md`
+- `atm-bridge-spec.md`
+- `public-api-checklist.md`
+
 `scterm` is a fresh Rust implementation of the `atch` session manager model,
 with a tightly scoped first sprint:
 
@@ -173,6 +187,20 @@ Option handling requirements:
 - Client input shall be forwarded into the PTY as raw bytes.
 - The master shall continue running after clients detach, until the child exits
   or the session is explicitly killed.
+
+### Structured Logging
+
+- Sprint 1 shall use the logging-only `sc-observability` crate from the sibling
+  workspace at `../sc-observability` for structured logging.
+- Sprint 1 shall not depend on any other crate from the sibling
+  `sc-observability` workspace.
+- Structured logging shall be an application-layer concern owned by
+  `scterm-app` and the final binary wiring.
+- `scterm-core` shall not depend on any observability crate.
+- `scterm-unix` shall not directly configure sinks, logger lifecycle, or log
+  file policy.
+- Log payloads shall be structured, machine-readable, and suitable for local
+  debugging and CI diagnostics.
 
 ### Multi-Client Detach and Kill Semantics
 
@@ -425,6 +453,11 @@ commit that introduces Rust code.
 - Additional tools such as `cargo-audit`, `cargo-hack`, and `cargo-udeps`
   should be added as early as practical, but linting, formatting, and tests are
   the immediate blocking gates.
+- The ATM boundary check (grep scan for `agent.team.mail`, `agent_team_mail`,
+  `atm_`, `use atm::`, `ATM_HOME` in `*.rs` and `Cargo.toml`) is a CI gate
+  from day one. See `.github/workflows/ci.yml`.
+- CI runs on ubuntu-latest and macos-latest to enforce cross-platform
+  compliance from the first code-bearing commit.
 
 ### REQ-RBP-007 — Unsafe Containment Policy (Blocking)
 

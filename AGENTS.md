@@ -37,6 +37,14 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --all
 ```
 
+CI (`.github/workflows/ci.yml`) runs on every PR and push to `main`/`develop`:
+- `fmt` — format check
+- `clippy` — lint with `-D warnings`
+- `atm-boundary` — grep scan blocking any ATM crate deps, ATM_HOME refs, or ATM imports
+- `test` — build + test on ubuntu-latest and macos-latest
+
+All 5 checks are required gates on both branches.
+
 ## Hard Boundaries
 
 Violations are blocking — no exceptions:

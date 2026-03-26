@@ -4,6 +4,20 @@
 
 This document defines the target architecture for `scterm`.
 
+Related documents:
+
+- `requirements.md`
+- `crate-boundaries.md`
+- `dependency-policy.md`
+- `implementation-plan.md`
+- `compatibility-matrix.md`
+- `protocol.md`
+- `state-machines.md`
+- `error-model.md`
+- `testing-strategy.md`
+- `atm-bridge-spec.md`
+- `public-api-checklist.md`
+
 The architecture is intentionally phased:
 
 - Phase 1 reproduces the core `atch` design in Rust.
@@ -188,6 +202,7 @@ Owns:
 - master/session orchestration;
 - attach-client orchestration;
 - command dispatch;
+- structured logging configuration and emission;
 - ordering of PTY writes from human input, `push`, redraw, and future ATM
   injections;
 - compatibility behavior derived from `atch`.
@@ -202,6 +217,14 @@ Application error policy:
   that boundary;
 - the binary maps the final application error into exit codes and user-facing
   output.
+
+Structured logging policy:
+
+- use the sibling `sc-observability` workspace’s logging-only crate
+- do not adopt any higher-layer crate from the sibling `sc-observability`
+  workspace in Sprint 1
+- keep logger lifecycle and sink configuration in `scterm-app` or the binary,
+  not in lower crates
 
 ### Crate 4: `scterm-atm` (Phase 2)
 
@@ -252,6 +275,23 @@ The runtime model must remain explicit.
 - async runtime choices must not leak into domain types or path-validation
   logic;
 - the core should remain unit-testable without a reactor or PTY.
+
+## Structured Logging Boundary
+
+Initial structured logging should use `sc-observability` from the sibling repo
+at `../sc-observability`.
+
+Boundary rules:
+
+- only `scterm-app` and the final binary may depend directly on
+  `sc-observability`
+- `scterm-core` stays logging-implementation-agnostic
+- `scterm-unix` stays logging-implementation-agnostic
+- Sprint 1 does not adopt any higher-layer crate from the sibling
+  `sc-observability` workspace
+
+This keeps local structured logs available immediately without widening the
+core architecture to include broader observability concerns.
 
 ## Phase 1 Core Components
 
@@ -321,30 +361,31 @@ Client-to-master traffic is structured control/data packets.
 
 #### Wire Format
 
-All client-to-master packets share a common framing:
+All client-to-master packets share a common fixed layout compatible with
+`atch`:
 
 ```
 Offset  Size   Field
 ------  -----  -----
 0       1      packet type (u8, see table below)
-1       2      payload length in bytes (u16, little-endian)
-3       N      payload bytes (N = length field value)
+1       1      length / selector byte (u8)
+2       8      fixed payload area (`sizeof(struct winsize)` on the reference platform)
 ```
 
-Minimum packet size is 3 bytes (type + zero-length payload).
+This is a 2-byte header plus fixed payload area. On the current local Unix
+reference platform, the total packet size is 10 bytes.
 
 | Type byte | Name     | Payload format                              |
 |-----------|----------|---------------------------------------------|
-| `0x01`    | `attach` | empty                                       |
-| `0x02`    | `detach` | empty                                       |
-| `0x03`    | `push`   | raw bytes to write into the PTY             |
-| `0x04`    | `winch`  | cols: u16 LE, rows: u16 LE (4 bytes total)  |
-| `0x05`    | `redraw` | empty                                       |
-| `0x06`    | `kill`   | empty                                       |
+| `0x00`    | `push`   | `len` bytes from payload written into the PTY |
+| `0x01`    | `attach` | `len != 0` means skip ring replay |
+| `0x02`    | `detach` | no payload semantics |
+| `0x03`    | `winch`  | payload carries `winsize` |
+| `0x04`    | `redraw` | `len` carries redraw method; payload carries `winsize` |
+| `0x05`    | `kill`   | `len` carries signal value |
 
-Unknown type bytes must be ignored by the master (forward-compatibility).
-Packets with a length field exceeding a reasonable maximum (e.g. 64 KiB) should
-be rejected and the connection closed.
+Unknown type bytes should be treated as invalid packets and the connection
+closed rather than guessed at. `len` is a single byte, not a 16-bit field.
 
 ### Master to Client
 

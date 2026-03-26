@@ -1,12 +1,15 @@
 # Claude Instructions for scterm
 
-## Critical Workflow Rule
+## Branch Model
 
-Do not switch the main checkout away from `main` for sprint work.
+This repo uses git-flow with two protected long-lived branches:
 
-- Keep the primary repo checkout on `main`
-- Use git worktrees for feature work when parallel branches are needed
-- Prefer short-lived feature branches targeting `develop`
+- `main` — protected, release-quality only. Never commit directly to main.
+- `develop` — protected integration branch. Feature branches target develop.
+
+Sprint work happens on `develop` or short-lived `feature/*` branches that merge into develop via PR. Use git worktrees when parallel branches are needed. Keep the primary repo checkout on `develop`.
+
+PRs into either branch require CI to pass and 1 approving review.
 
 ## Project Overview
 
@@ -37,6 +40,14 @@ cargo test --workspace
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --all
 ```
+
+CI (`.github/workflows/ci.yml`) runs on every PR and push to `main`/`develop`:
+- `fmt` — format check
+- `clippy` — lint with `-D warnings`
+- `atm-boundary` — grep scan blocking any ATM crate deps, ATM_HOME refs, or ATM imports
+- `test` — build + test on ubuntu-latest and macos-latest
+
+All 5 checks are required gates on both branches.
 
 ## Team Communication
 
