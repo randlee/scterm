@@ -4,6 +4,20 @@
 
 This document defines the product requirements for `scterm`.
 
+Related documents:
+
+- `architecture.md`
+- `crate-boundaries.md`
+- `dependency-policy.md`
+- `implementation-plan.md`
+- `compatibility-matrix.md`
+- `protocol.md`
+- `state-machines.md`
+- `error-model.md`
+- `testing-strategy.md`
+- `atm-bridge-spec.md`
+- `public-api-checklist.md`
+
 `scterm` is a fresh Rust implementation of the `atch` session manager model,
 with a tightly scoped first sprint:
 
@@ -72,8 +86,14 @@ nudge waiting agent terminals into action.
 - The default session directory shall be `$HOME/.cache/<binary-name>`.
 - If `$HOME` is unset or empty, the implementation shall fall back to the user
   database home directory.
+- `$HOME=/` shall be treated as unusable for the default session directory and
+  shall trigger the fallback path.
 - If no usable home directory is available, the implementation shall fall back
   to `/tmp/.<binary-name>-<uid>`.
+- Session socket paths that exceed the platform `sun_path` limit shall remain
+  supported via parent-directory `chdir` plus basename-only bind/connect.
+  Maximum supported session path depth is bounded by filesystem limits rather
+  than `sun_path`.
 
 ### Commands
 
@@ -112,11 +132,11 @@ Legacy single-letter compatibility modes shall be supported for parity with
 - `attach` shall fail if the session does not exist.
 - `new` shall create a session and immediately attach.
 - `start` shall create a session detached and return after startup succeeds.
-  Startup success is defined as: the master process has created the session
-  socket and is ready to accept client connections. The `start` command must
-  verify this by attempting to connect to the socket before returning exit
-  code 0; if the socket is not connectable within a reasonable timeout, `start`
-  shall return a non-zero exit code.
+  Startup success requires all three: the control socket is created, bound, and
+  listening; the PTY child-start path succeeded; and a fresh client can
+  connect to the socket. The `start` command must verify socket readiness by
+  attempting to connect before returning exit code 0; if any condition fails
+  within the startup window, `start` shall return a non-zero exit code.
 - `run` shall create a session without daemonizing the master process.
 - `push` shall copy stdin verbatim into the running session.
 - `kill` shall send `SIGTERM` first, then escalate to `SIGKILL` after a grace
@@ -126,6 +146,12 @@ Legacy single-letter compatibility modes shall be supported for parity with
 - `clear` shall truncate the on-disk session log.
 - `current` shall print the human-readable session ancestry chain and exit
   successfully only when inside a session.
+- `list` shall distinguish running sessions, running sessions with at least one
+  attached client, and stale sessions.
+- Attached state for `list` shall be represented by master-owned session
+  metadata equivalent in behavior to `atch`'s socket execute-bit marker.
+- The master shall set and clear attached-state metadata as clients connect and
+  disconnect.
 
 ### Option Handling
 
@@ -174,6 +200,33 @@ Option handling requirements:
 - The master shall continue running after clients detach, until the child exits
   or the session is explicitly killed.
 
+### Session Lifecycle
+
+- Master startup shall create, bind, and listen on the control socket before
+  the PTY fork/exec path begins.
+- The session shall not be considered `Running` until all three of these hold:
+  the control socket exists, is bound, and is listening; the PTY child-start
+  path succeeded; and a fresh client can connect to the socket.
+- The master shall not broadcast PTY output before the first client attaches.
+  Output produced before first attach shall still be captured to the
+  persistent log and in-memory ring buffer.
+- On first attach, the client shall receive history via log replay and ring
+  replay before transitioning to live streaming.
+
+### Structured Logging
+
+- Sprint 1 shall use the logging-only `sc-observability` crate from the sibling
+  workspace at `../sc-observability` for structured logging.
+- Sprint 1 shall not depend on any other crate from the sibling
+  `sc-observability` workspace.
+- Structured logging shall be an application-layer concern owned by
+  `scterm-app` and the final binary wiring.
+- `scterm-core` shall not depend on any observability crate.
+- `scterm-unix` shall not directly configure sinks, logger lifecycle, or log
+  file policy.
+- Log payloads shall be structured, machine-readable, and suitable for local
+  debugging and CI diagnostics.
+
 ### Multi-Client Detach and Kill Semantics
 
 - When one client detaches, all other attached clients shall remain connected
@@ -205,14 +258,40 @@ Option handling requirements:
 
 ### Environment and Nesting
 
-- The child process shall receive a derived session ancestry environment
-  variable based on the executable name, for example `SCTERM_SESSION`.
-- Non-alphanumeric characters in the executable basename shall be converted to
-  underscores when deriving the environment variable name.
+The ancestry environment variable is normative Sprint 1 behavior and shall
+match `atch`.
+
+- The variable name shall be derived from the executable basename
+  (`argv[0]` basename after the last `/`), uppercased, with every
+  non-alphanumeric character replaced by `_`, then suffixed with `_SESSION`.
+- For example, `scterm` yields `SCTERM_SESSION`; `ssh2incus-atch` yields
+  `SSH2INCUS_ATCH_SESSION`.
 - The environment value shall be a colon-separated chain of session socket
   paths, outermost first.
-- The implementation shall refuse direct or indirect self-attach based on this
-  ancestry chain.
+- A single non-nested session shall contain exactly one socket path and no
+  colon.
+- When spawning a child inside an existing session ancestry, the new session
+  socket path shall be appended as `previous_chain + ":" + current_socket`.
+- When no prior ancestry exists, the environment value shall be the current
+  session socket path.
+- The implementation shall impose no fixed nesting-depth cap in Sprint 1.
+- The `current` command shall render the basename of each ancestry segment and
+  join them with ` > `.
+- `clear` with no explicit session argument shall target the innermost session
+  from the ancestry chain.
+- Self-attach prevention shall be implemented as a domain-layer predicate in
+  `scterm-core` that scans each colon-delimited ancestry segment for exact
+  full-path equality with the target socket path. Basename-only matches are not
+  sufficient.
+- Self-attach prevention sequence is normative:
+  1. expand the target session path from the argument or default rules
+  2. scan each colon-delimited ancestry segment for exact full-path equality
+     with the target socket path
+  3. if any segment matches, return a self-attach `ScError`
+  4. perform this check before any socket connect attempt
+- The CLI/app layer shall map ancestry and self-attach predicate failures to
+  user-visible messages and deterministic exit codes; it shall not own the
+  predicate itself.
 
 ### Security and Isolation
 
@@ -224,9 +303,15 @@ Option handling requirements:
 ### Stale Socket Definition
 
 A socket is **stale** when the socket file exists on the filesystem but
-`connect()` on it fails with `ECONNREFUSED`. A missing socket file is not a
+`connect()` on it returns `ECONNREFUSED`. A missing socket file is not a
 stale socket; it is an absent session. Log replay is still valid and possible
 after a stale socket is detected.
+
+If the path exists but is not a socket, the implementation shall surface
+`ENOTSOCK` / invalid-session behavior and shall not attempt stale recovery.
+
+No other `connect()` error implies stale recovery. Errors such as `ETIMEDOUT`
+or `EPERM` are hard failures and shall not be treated as stale.
 
 ### Error Handling and UX
 
@@ -384,7 +469,7 @@ session lifecycle transitions.
 
 - Session master states shall at minimum distinguish `Resolved`, `Running`,
   and `Stale`. `Stale` is reached from `Resolved` when the socket file exists
-  but `connect()` fails with `ECONNREFUSED`.
+  but `connect()` returns `ECONNREFUSED`.
 - Attach client states shall follow this ordering:
   `LogReplaying → Connecting → RingReplaying → Live → Detached`.
   Log replay reads the on-disk log directly (no socket required) and must
@@ -425,6 +510,11 @@ commit that introduces Rust code.
 - Additional tools such as `cargo-audit`, `cargo-hack`, and `cargo-udeps`
   should be added as early as practical, but linting, formatting, and tests are
   the immediate blocking gates.
+- The ATM boundary check (grep scan for `agent.team.mail`, `agent_team_mail`,
+  `atm_`, `use atm::`, `ATM_HOME` in `*.rs` and `Cargo.toml`) is a CI gate
+  from day one. See `.github/workflows/ci.yml`.
+- CI runs on ubuntu-latest and macos-latest to enforce cross-platform
+  compliance from the first code-bearing commit.
 
 ### REQ-RBP-007 — Unsafe Containment Policy (Blocking)
 

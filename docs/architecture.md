@@ -4,6 +4,20 @@
 
 This document defines the target architecture for `scterm`.
 
+Related documents:
+
+- `requirements.md`
+- `crate-boundaries.md`
+- `dependency-policy.md`
+- `implementation-plan.md`
+- `compatibility-matrix.md`
+- `protocol.md`
+- `state-machines.md`
+- `error-model.md`
+- `testing-strategy.md`
+- `atm-bridge-spec.md`
+- `public-api-checklist.md`
+
 The architecture is intentionally phased:
 
 - Phase 1 reproduces the core `atch` design in Rust.
@@ -150,7 +164,8 @@ Owns:
 - session path resolution rules;
 - session ancestry/env-var derivation;
 - ring buffer implementation;
-- sanitized inbound message envelope types;
+- ATM-independent synthesized-input request types, only if a shared domain type
+  is needed at all;
 - shared error and result types that are independent of concrete I/O backends.
 
 Must not depend on:
@@ -188,6 +203,7 @@ Owns:
 - master/session orchestration;
 - attach-client orchestration;
 - command dispatch;
+- structured logging configuration and emission;
 - ordering of PTY writes from human input, `push`, redraw, and future ATM
   injections;
 - compatibility behavior derived from `atch`.
@@ -202,6 +218,14 @@ Application error policy:
   that boundary;
 - the binary maps the final application error into exit codes and user-facing
   output.
+
+Structured logging policy:
+
+- use the sibling `sc-observability` workspace’s logging-only crate
+- do not adopt any higher-layer crate from the sibling `sc-observability`
+  workspace in Sprint 1
+- keep logger lifecycle and sink configuration in `scterm-app` or the binary,
+  not in lower crates
 
 ### Crate 4: `scterm-atm` (Phase 2)
 
@@ -253,6 +277,23 @@ The runtime model must remain explicit.
   logic;
 - the core should remain unit-testable without a reactor or PTY.
 
+## Structured Logging Boundary
+
+Initial structured logging should use `sc-observability` from the sibling repo
+at `../sc-observability`.
+
+Boundary rules:
+
+- only `scterm-app` and the final binary may depend directly on
+  `sc-observability`
+- `scterm-core` stays logging-implementation-agnostic
+- `scterm-unix` stays logging-implementation-agnostic
+- Sprint 1 does not adopt any higher-layer crate from the sibling
+  `sc-observability` workspace
+
+This keeps local structured logs available immediately without widening the
+core architecture to include broader observability concerns.
+
 ## Phase 1 Core Components
 
 ### CLI Layer
@@ -282,6 +323,13 @@ Responsibilities:
 
 The master is the single source of truth for a session.
 
+**Attached-state metadata**: The master maintains a per-session attached-state
+flag equivalent to `atch`'s socket execute-bit marker. The master sets this
+flag when the first client attaches and clears it when the last client
+detaches. This flag is readable by `list` to distinguish running-with-clients
+from running-without-clients. The flag is master-owned; no client or adapter
+may toggle it directly.
+
 The master should expose one explicit serialized input path, conceptually:
 
 - `enqueue_user_input`
@@ -289,8 +337,18 @@ The master should expose one explicit serialized input path, conceptually:
 - `enqueue_redraw_input`
 - `enqueue_inbound_message`
 
-Internally these may share one queue, but architecturally they are one ordered
-stream into the PTY.
+Architecturally, all input sources flow through one master-owned PTY write
+path. The implementation may use a channel, a loop-owned queue, or any other
+single-point arbiter, but no clients, adapters, or lower layers may write
+directly to the PTY file descriptor. Single ownership of the write path is the
+rule; the exact serialization mechanism is an implementation detail owned by
+`scterm-app`.
+
+Output observation (tool-call tap) is deferred from Sprint 1. A hook point may
+be reserved only at the app layer, at the post-PTY-read / pre-broadcast tee
+point in the master read loop. It must be observe-only, non-blocking, and must
+not mutate or backpressure the PTY stream, the persistent log, or client
+broadcast.
 
 ### Attach Client
 
@@ -321,30 +379,31 @@ Client-to-master traffic is structured control/data packets.
 
 #### Wire Format
 
-All client-to-master packets share a common framing:
+All client-to-master packets share a common fixed layout compatible with
+`atch`:
 
 ```
 Offset  Size   Field
 ------  -----  -----
 0       1      packet type (u8, see table below)
-1       2      payload length in bytes (u16, little-endian)
-3       N      payload bytes (N = length field value)
+1       1      length / selector byte (u8)
+2       8      fixed payload area (`sizeof(struct winsize)` on the reference platform)
 ```
 
-Minimum packet size is 3 bytes (type + zero-length payload).
+This is a 2-byte header plus fixed payload area. On the current local Unix
+reference platform, the total packet size is 10 bytes.
 
 | Type byte | Name     | Payload format                              |
 |-----------|----------|---------------------------------------------|
-| `0x01`    | `attach` | empty                                       |
-| `0x02`    | `detach` | empty                                       |
-| `0x03`    | `push`   | raw bytes to write into the PTY             |
-| `0x04`    | `winch`  | cols: u16 LE, rows: u16 LE (4 bytes total)  |
-| `0x05`    | `redraw` | empty                                       |
-| `0x06`    | `kill`   | empty                                       |
+| `0x00`    | `push`   | `len` bytes from payload written into the PTY |
+| `0x01`    | `attach` | `len != 0` means skip ring replay |
+| `0x02`    | `detach` | no payload semantics |
+| `0x03`    | `winch`  | payload carries `winsize` |
+| `0x04`    | `redraw` | `len` carries redraw method; payload carries `winsize` |
+| `0x05`    | `kill`   | `len` carries signal value |
 
-Unknown type bytes must be ignored by the master (forward-compatibility).
-Packets with a length field exceeding a reasonable maximum (e.g. 64 KiB) should
-be rejected and the connection closed.
+Unknown type bytes should be treated as invalid packets and the connection
+closed rather than guessed at. `len` is a single byte, not a 16-bit field.
 
 ### Master to Client
 
@@ -359,7 +418,8 @@ the master does not reinterpret the terminal stream.
 ### Create and Attach
 
 1. CLI resolves the session path and child command.
-2. Master creates the socket and persistent log.
+2. Master creates, binds, and listens on the control socket, then opens the
+   persistent log.
 3. Master spawns the PTY child.
 4. Attach client replays the on-disk log (read directly from filesystem).
 5. Attach client connects to the session socket.
@@ -375,13 +435,31 @@ the master does not reinterpret the terminal stream.
 4. Master replays ring history if needed.
 5. Live PTY output resumes.
 
+### Startup Readiness
+
+The session may be considered started only after all three of these conditions
+hold:
+
+- the control socket is created, bound, listening, and connectable
+- the PTY child-start path has succeeded, including exec-error handshake
+  success with the daemon child
+- a fresh client can connect to the socket
+
+This rule applies to detached `start` semantics and to any internal readiness
+handshake used between the CLI process and the master.
+
 ### Stale Socket Definition
 
 A socket is **stale** when the socket file exists on the filesystem but no
 master process is listening on it. This is detected by attempting to connect:
-if `connect()` returns `ECONNREFUSED` (or the file exists but `connect()`
-fails), the socket is stale. A missing socket file is not a stale socket — it
-is an absent session.
+if `connect()` returns `ECONNREFUSED`, the socket is stale. A missing socket
+file is not a stale socket — it is an absent session.
+
+If the path exists but is not a socket, `connect()` resolution shall surface an
+invalid-session / `ENOTSOCK` hard error rather than stale-session recovery.
+
+No other `connect()` error implies stale recovery. Errors such as `ETIMEDOUT`
+or `EPERM` are hard failures and remain ordinary command errors.
 
 Stale sockets arise when the master process exits without cleaning up (e.g.
 crash, power loss, SIGKILL). The log file and session directory remain valid
@@ -390,7 +468,7 @@ after a stale socket is detected and log replay must still be possible.
 ### Stale Session Recovery
 
 1. CLI or client attempts `connect()` on the session socket.
-2. `connect()` fails with `ECONNREFUSED` → socket is stale.
+2. `connect()` returns `ECONNREFUSED` → socket is stale.
 3. Client replays the on-disk log if present (history is still valid).
 4. Default open mode removes the stale socket file and creates a fresh session.
 5. `attach` command fails with a clear error indicating a stale session was
@@ -415,6 +493,11 @@ All writes into the child process stdin path must pass through the master:
 
 This serialization point is mandatory. It keeps ordering deterministic and
 prevents races between human input and synthetic input.
+
+The master also preserves `atch`'s wait-for-first-attach behavior: PTY output
+produced before the first attached client is retained in the persistent log and
+ring buffer, but it is not broadcast live to zero clients. The first client
+receives that history through replay, then joins the live stream.
 
 ## History Model
 
@@ -679,7 +762,7 @@ internal phase into type noise.
 ```text
 Session (master side):
   Resolved -> Running
-  Resolved -> Stale        (socket file exists but connect() fails)
+  Resolved -> Stale        (socket file exists and connect() returns ECONNREFUSED)
 
 Attach client:
   LogReplaying -> Connecting -> RingReplaying -> Live -> Detached
@@ -695,6 +778,11 @@ is detected as stale. The caller must decide whether to remove the stale socket
 and create a fresh `Session<Resolved>` (default open mode) or fail
 (`attach` command).
 
+`Starting`, `Exiting`, and `Exited` are valid internal operational phases, but
+the coarse public typestate states remain `Resolved`, `Running`, and `Stale`.
+`Running` specifically means the control socket is created/bound/listening, the
+PTY child-start path succeeded, and a fresh client can connect.
+
 Replay internals may stay private implementation detail if that keeps the API
 clearer, but public lifecycle transitions should be consuming transitions rather
 than ad-hoc mutable state checks.
@@ -709,7 +797,7 @@ pub struct Session<S> {
 
 impl Session<Resolved> {
     pub fn start(self, ...) -> Result<Session<Running>, ScError> { ... }
-    pub fn check_stale(self) -> Result<Session<Running>, Session<Stale>> { ... }
+    pub fn check_stale(self) -> Result<Session<Resolved>, Session<Stale>> { ... }
 }
 
 impl Session<Stale> {

@@ -19,7 +19,12 @@ jobs:
           components: rustfmt
 
       - name: Check formatting
-        run: cargo fmt --check --all
+        run: |
+          if [ -f Cargo.toml ]; then
+            cargo fmt --check --all
+          else
+            echo "No Cargo.toml — skipping (docs-only branch)"
+          fi
 
   clippy:
     name: Clippy
@@ -50,7 +55,12 @@ jobs:
           key: ubuntu-clippy-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: |
+          if [ -f Cargo.toml ]; then
+            cargo clippy --all-targets --all-features -- -D warnings
+          else
+            echo "No Cargo.toml — skipping (docs-only branch)"
+          fi
 
   atm-boundary:
     name: ATM boundary (no ATM crate deps)
@@ -102,7 +112,17 @@ jobs:
           key: ${{ matrix.os }}-test-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
-        run: cargo build --workspace
+        run: |
+          if [ -f Cargo.toml ]; then
+            cargo build --workspace
+          else
+            echo "No Cargo.toml — skipping (docs-only branch)"
+          fi
 
       - name: Run tests
-        run: cargo test --workspace
+        run: |
+          if [ -f Cargo.toml ]; then
+            cargo test --workspace
+          else
+            echo "No Cargo.toml — skipping (docs-only branch)"
+          fi
