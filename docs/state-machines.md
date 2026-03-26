@@ -7,9 +7,17 @@ ATM extension.
 
 ## Session Master Lifecycle
 
+### Coarse Public Typestate
+
+```text
+Resolved -> Running
+Resolved -> Stale
+```
+
+### Internal Operational Phases
+
 ```text
 Resolved -> Starting -> Running -> Exiting -> Exited
-Resolved -> Stale
 ```
 
 Rules:

@@ -32,6 +32,9 @@ Source-file note:
 | master->client raw byte stream | `atch.h`, `attach.c`, `master.c` | `scterm-app` + `scterm-unix` | Unix integration |
 | log replay before live attach | `attach.c` | `scterm-app` | Unix integration |
 | ring replay skipping after log replay | `attach.c`, `master.c` | `scterm-app` | Unix integration |
+| startup readiness (exec-error handshake + connectable socket) | `atch.c`, `master.c` | `scterm-app` + `scterm-unix` | Unix integration |
+| long Unix socket path via chdir + basename bind/connect | `attach.c`, `master.c` | `scterm-unix` | Unix integration |
+| wait-for-first-attach (pre-attach output to log/ring only) | `master.c` | `scterm-app` | Unix integration |
 | persistent on-disk log cap | `config.h`, `master.c`, `tests/test.sh` | `scterm-core` + `scterm-app` | unit + compatibility |
 | multi-client attach | `master.c` | `scterm-app` + `scterm-unix` | Unix integration |
 | list attached vs unattached state | `master.c` | `scterm-app` + `scterm-unix` | compatibility |

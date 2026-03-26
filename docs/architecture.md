@@ -323,6 +323,13 @@ Responsibilities:
 
 The master is the single source of truth for a session.
 
+**Attached-state metadata**: The master maintains a per-session attached-state
+flag equivalent to `atch`'s socket execute-bit marker. The master sets this
+flag when the first client attaches and clears it when the last client
+detaches. This flag is readable by `list` to distinguish running-with-clients
+from running-without-clients. The flag is master-owned; no client or adapter
+may toggle it directly.
+
 The master should expose one explicit serialized input path, conceptually:
 
 - `enqueue_user_input`
