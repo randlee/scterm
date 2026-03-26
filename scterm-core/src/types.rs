@@ -246,7 +246,8 @@ mod tests {
     #[test]
     fn session_path_must_be_absolute() {
         assert!(SessionPath::new("relative/path").is_err());
-        assert!(SessionPath::new(Path::new("/tmp/session")).is_ok());
+        let session = std::env::temp_dir().join("scterm-types-session");
+        assert!(SessionPath::new(session).is_ok());
     }
 
     #[test]
