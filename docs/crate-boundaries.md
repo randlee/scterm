@@ -79,7 +79,7 @@ Must not depend on:
 
 - `scterm-atm`
 - CLI parser crates
-- any higher-layer crate from the sibling `sc-observability` workspace
+- `sc-observability` or any crate from the sibling `sc-observability` workspace
 
 Must not know about:
 
