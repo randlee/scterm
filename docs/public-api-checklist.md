@@ -45,7 +45,7 @@ Internal-only:
 
 Internal-only:
 
-- [~] logger wiring via `sc-observability`
+- [~] logger wiring via `AppLogger`
 - [~] PTY input serialization queue
 
 ## `scterm-atm`
