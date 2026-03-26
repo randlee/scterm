@@ -1,0 +1,169 @@
+# scterm Crate Boundaries
+
+## Purpose
+
+This document is the single-source boundary matrix for the `scterm` workspace.
+
+If implementation and this file disagree, this file wins until explicitly
+amended.
+
+## Workspace Shape
+
+Sprint 1 targets:
+
+- `scterm-core`
+- `scterm-unix`
+- `scterm-app`
+
+Sprint 2 adds:
+
+- `scterm-atm`
+
+The binary may live inside `scterm-app` or as a thin top-level package, but it
+must not become a fourth behavior crate in Sprint 1.
+
+## Ownership Matrix
+
+### `scterm-core`
+
+Owns:
+
+- packet definitions
+- session path rules
+- session ancestry rules
+- validated newtypes
+- ring buffer implementation
+- domain errors
+- domain state-machine types
+- ATM-independent message envelope types
+
+May depend on:
+
+- `std`
+- small utility crates such as `thiserror`
+
+Must not depend on:
+
+- Tokio
+- Unix socket APIs
+- PTY APIs
+- `sc-observability`
+- `atm`
+
+Must not know about:
+
+- daemonization
+- terminal raw mode
+- concrete socket paths beyond validated path rules
+- sink configuration
+- CLI rendering text
+
+### `scterm-unix`
+
+Owns:
+
+- Unix socket transport
+- PTY integration
+- raw terminal mode
+- signal handling
+- process groups
+- daemonization
+- Unix-specific filesystem operations
+
+May depend on:
+
+- `scterm-core`
+- Unix/runtime crates required for PTY and socket behavior
+
+Must not depend on:
+
+- `scterm-atm`
+- CLI parser crates
+- `sc-observability` or any crate from the sibling `sc-observability` workspace
+
+Must not know about:
+
+- ATM mailbox semantics
+- command alias rules
+- user-facing help text
+- sink or logger configuration policy
+
+### `scterm-app`
+
+Owns:
+
+- command orchestration
+- master/client orchestration
+- `atch` compatibility behavior
+- structured logging integration
+- PTY write ordering policy
+- the only serialized write path into the PTY file descriptor
+- application-level error boundary
+
+May depend on:
+
+- `scterm-core`
+- `scterm-unix`
+- `sc-observability`
+- one application error crate such as `anyhow`
+
+Must not depend on:
+
+- any higher-layer crate from the sibling `sc-observability` workspace
+
+Must not know about:
+
+- later observability concerns beyond local structured logging
+- ATM transport internals before Sprint 2
+
+### `scterm-atm`
+
+Owns:
+
+- blocking reads from the external `atm` CLI
+- inbound message normalization
+- message de-duplication state
+- typed ATM-to-app event translation
+
+May depend on:
+
+- `scterm-core`
+- application support crates needed for the adapter
+
+Must not depend on:
+
+- `scterm-unix`
+- PTY internals
+- any higher-layer crate from the sibling `sc-observability` workspace
+
+Must not know about:
+
+- socket protocol internals
+- terminal raw-mode mechanics
+- PTY ownership
+
+## Logging Boundary
+
+Initial structured logging is provided by the sibling `sc-observability`
+workspace.
+
+Boundary rules:
+
+- only `scterm-app` and the final binary wiring may depend directly on
+  `sc-observability`
+- `scterm-core` and `scterm-unix` do not configure or own logger lifecycle
+- lower crates prefer rich typed errors and return values over ad-hoc logging
+- no other crate from the sibling `sc-observability` workspace is permitted in
+  Sprint 1
+
+## Boundary Review Questions
+
+Every non-trivial change should answer these:
+
+- Which crate owns this behavior?
+- Why does it not belong one layer lower?
+- Does this change introduce a new dependency edge?
+- Does it pull ATM knowledge into a non-ATM crate?
+- Does it pull runtime knowledge into `scterm-core`?
+- Does it pull logging implementation knowledge into `scterm-core` or
+  `scterm-unix`?
