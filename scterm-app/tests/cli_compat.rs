@@ -1,7 +1,7 @@
 //! CLI and PTY integration tests derived from the `atch` compatibility suite.
 
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
@@ -249,11 +249,42 @@ impl PtyChild {
         }
 
         let mut buffer = [0_u8; 4096];
-        let read = self.master.read(&mut buffer).context("read PTY master")?;
+        let read = match self.master.read(&mut buffer) {
+            Ok(read) => read,
+            Err(error) if error.raw_os_error() == Some(5) => 0,
+            Err(error) => return Err(error).context("read PTY master"),
+        };
         if read > 0 {
             self.captured.extend_from_slice(&buffer[..read]);
         }
         Ok(())
+    }
+}
+
+fn probe_pty() -> Result<()> {
+    let _pty = openpty(
+        Some(&Winsize {
+            ws_row: 24,
+            ws_col: 80,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        }),
+        None,
+    )
+    .context("probe PTY availability")?;
+    Ok(())
+}
+
+fn skip_if_pty_unavailable(test_name: &str) -> Result<bool> {
+    match probe_pty() {
+        Ok(()) => Ok(false),
+        Err(error) => {
+            let Some(io_error) = error.downcast_ref::<io::Error>() else {
+                return Err(error);
+            };
+            eprintln!("skipping {test_name}: PTY unavailable in this environment: {io_error}");
+            Ok(true)
+        }
     }
 }
 
@@ -319,6 +350,9 @@ fn non_tty_attach_new_and_open_fail_clearly() -> Result<()> {
 
 #[test]
 fn default_open_creates_then_attaches_existing_session() -> Result<()> {
+    if skip_if_pty_unavailable("default_open_creates_then_attaches_existing_session")? {
+        return Ok(());
+    }
     let env = TestEnv::new()?;
 
     let mut first = env.spawn_pty(&[
@@ -349,6 +383,9 @@ fn default_open_creates_then_attaches_existing_session() -> Result<()> {
 
 #[test]
 fn strict_attach_failure_with_tty_reports_missing_session() -> Result<()> {
+    if skip_if_pty_unavailable("strict_attach_failure_with_tty_reports_missing_session")? {
+        return Ok(());
+    }
     let env = TestEnv::new()?;
 
     let mut attach = env.spawn_pty(&["attach", "missing-session"])?;
@@ -447,6 +484,9 @@ fn disabled_log_cap_skips_log_creation() -> Result<()> {
 
 #[test]
 fn clear_clears_live_log_and_ring_history() -> Result<()> {
+    if skip_if_pty_unavailable("clear_clears_live_log_and_ring_history")? {
+        return Ok(());
+    }
     let env = TestEnv::new()?;
 
     let start = env.run(&["start", "clear-live", "/bin/sh", "-c", LINE_ECHO_SCRIPT])?;
@@ -514,6 +554,9 @@ fn clear_clears_offline_log_history() -> Result<()> {
 
 #[test]
 fn list_marks_attached_and_unattached_sessions() -> Result<()> {
+    if skip_if_pty_unavailable("list_marks_attached_and_unattached_sessions")? {
+        return Ok(());
+    }
     let env = TestEnv::new()?;
 
     let start = env.run(&["start", "ls-attach", "/bin/sh", "-c", LINE_ECHO_SCRIPT])?;
@@ -542,6 +585,9 @@ fn list_marks_attached_and_unattached_sessions() -> Result<()> {
 
 #[test]
 fn stale_session_is_reported_and_can_be_recreated() -> Result<()> {
+    if skip_if_pty_unavailable("stale_session_is_reported_and_can_be_recreated")? {
+        return Ok(());
+    }
     let env = TestEnv::new()?;
 
     let mut run_child = env.spawn_background(&["run", "stale-case", "sleep", "99999"])?;
@@ -612,6 +658,9 @@ fn current_subcommand_prints_the_innermost_session_name() -> Result<()> {
 
 #[test]
 fn legacy_modes_execute_the_compat_surface() -> Result<()> {
+    if skip_if_pty_unavailable("legacy_modes_execute_the_compat_surface")? {
+        return Ok(());
+    }
     let env = TestEnv::new()?;
 
     let list = env.run(&["-l"])?;
@@ -688,6 +737,10 @@ fn legacy_modes_execute_the_compat_surface() -> Result<()> {
 
 #[test]
 fn sigwinch_is_forwarded_from_the_attach_client_to_the_child_process() -> Result<()> {
+    if skip_if_pty_unavailable("sigwinch_is_forwarded_from_the_attach_client_to_the_child_process")?
+    {
+        return Ok(());
+    }
     let env = TestEnv::new()?;
     let size_path = env.temp_path("sigwinch-size.txt");
     let ready_path = env.temp_path("sigwinch-ready.txt");
@@ -770,6 +823,9 @@ fn child_process_receives_scterm_session_env_var() -> Result<()> {
 
 #[test]
 fn detach_and_suspend_leave_the_session_running() -> Result<()> {
+    if skip_if_pty_unavailable("detach_and_suspend_leave_the_session_running")? {
+        return Ok(());
+    }
     let env = TestEnv::new()?;
 
     let start = env.run(&["start", "detachable", "/bin/sh", "-c", LINE_ECHO_SCRIPT])?;
@@ -816,6 +872,9 @@ fn detach_and_suspend_leave_the_session_running() -> Result<()> {
 
 #[test]
 fn multi_client_attach_receives_the_same_output() -> Result<()> {
+    if skip_if_pty_unavailable("multi_client_attach_receives_the_same_output")? {
+        return Ok(());
+    }
     let env = TestEnv::new()?;
 
     let start = env.run(&["start", "multi", "/bin/sh", "-c", LINE_ECHO_SCRIPT])?;
