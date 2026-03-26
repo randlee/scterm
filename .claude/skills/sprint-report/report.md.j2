@@ -1,7 +1,7 @@
 ---
 name: sprint-report
-version: 3.1.0
-description: Sprint status report for scterm phases.
+version: 1.0.0
+description: Phase status report for scterm.
 format: markdown
 required_variables:
   - mode
@@ -13,8 +13,8 @@ required_variables:
 ────────────────────────────────────────
 {{ integration_row }}
 {% else %}
-| Sprint | DEV | QA | CI | PR |
-|--------|-----|----|----|-----|
+| Phase | DEV | QA | CI | PR |
+|-------|-----|----|----|-----|
 {{ sprint_rows }}
 {{ integration_row }}
 {% endif %}
