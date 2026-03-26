@@ -233,7 +233,6 @@ impl fmt::Display for RingSize {
 #[cfg(test)]
 mod tests {
     use super::{LogCap, RingSize, SessionName, SessionPath};
-    use std::path::Path;
 
     #[test]
     fn session_name_rejects_invalid_inputs() {
