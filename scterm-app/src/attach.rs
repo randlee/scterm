@@ -21,6 +21,23 @@ pub struct AttachSession {
     transport: UnixSocketTransport,
 }
 
+/// Proof that the on-disk log already covers any would-be ring replay bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LogReplayCovered;
+
+impl LogReplayCovered {
+    /// Creates a proof when `log_history` already ends with `ring_bytes`, or when
+    /// there is no ring replay to deliver.
+    #[must_use]
+    pub fn from_history_and_ring(log_history: &[u8], ring_bytes: &[u8]) -> Option<Self> {
+        if ring_bytes.is_empty() || log_history.ends_with(ring_bytes) {
+            Some(Self)
+        } else {
+            None
+        }
+    }
+}
+
 /// A live attached client with raw-mode restoration on drop.
 #[derive(Debug)]
 pub struct LiveAttachment<Tty> {
@@ -44,11 +61,18 @@ impl AttachSession {
     ///
     /// # Errors
     /// Returns an error when the persistent log cannot be read.
-    pub fn replay_log(&self, log: &PersistentLog) -> Result<(AttachClient<Connecting>, Vec<u8>)> {
+    pub fn replay_log(&self, log: &PersistentLog) -> Result<(AttachClient<LogReplaying>, Vec<u8>)> {
         let history = log.replay()?;
-        let connecting =
-            AttachClient::<LogReplaying>::new_log_replaying(self.path.clone()).connect();
-        Ok((connecting, history))
+        Ok((
+            AttachClient::<LogReplaying>::new_log_replaying(self.path.clone()),
+            history,
+        ))
+    }
+
+    /// Completes log replay and transitions the attach client into socket connection setup.
+    #[must_use]
+    pub fn finish_log_replay(&self, state: AttachClient<LogReplaying>) -> AttachClient<Connecting> {
+        state.connect()
     }
 
     /// Connects to the session socket and sends the attach packet.
@@ -107,18 +131,20 @@ impl AttachSession {
     ///
     /// # Errors
     /// Returns an error when raw mode cannot be installed.
-    pub fn go_live<Tty>(
+    pub fn go_live_skip_ring<Tty>(
         &self,
         state: AttachClient<Connecting>,
+        coverage: LogReplayCovered,
         stream: UnixSocketStream,
         tty: Tty,
     ) -> Result<LiveAttachment<Tty>>
     where
         Tty: AsFd,
     {
+        let _ = coverage;
         let raw_mode = RawModeGuard::new(&tty)?;
         Ok(LiveAttachment {
-            state: state.go_live(),
+            state: state.go_live_skip_ring(),
             stream,
             raw_mode,
             tty,

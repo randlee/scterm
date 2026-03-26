@@ -9,7 +9,10 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use scterm_core::{AttachRequest, LogCap, RingBuffer, RingSize, Session, SessionPath, WindowSize};
+use scterm_core::{
+    AttachRequest, BoundSocket, ClientReady, LogCap, PtyReady, RingBuffer, RingSize, Session,
+    SessionPath, WindowSize,
+};
 use scterm_unix::{
     PtyBackend, PtyCommand, PtyProcess, SocketTransport, UnixPtyBackend, UnixSocketListener,
     UnixSocketStream, UnixSocketTransport,
@@ -217,10 +220,23 @@ where
         stream: UnixSocketStream,
         request: AttachRequest,
     ) -> Result<Vec<u8>> {
-        self.clients.push(ClientConnection { stream });
+        let previous_first_attach_seen = self.first_attach_seen;
+        let first_client = self.clients.is_empty();
+
+        if first_client {
+            set_attached_state(self.path.as_path(), true)?;
+        }
+
         self.first_attach_seen = true;
-        set_attached_state(self.path.as_path(), true)?;
-        self.logger.emit("master", "attach", "client attached")?;
+        if let Err(error) = self.logger.emit("master", "attach", "client attached") {
+            if first_client {
+                let _ = set_attached_state(self.path.as_path(), false);
+            }
+            self.first_attach_seen = previous_first_attach_seen;
+            return Err(error);
+        }
+
+        self.clients.push(ClientConnection { stream });
 
         if request.skip_ring_replay() {
             Ok(Vec::new())
@@ -421,8 +437,11 @@ impl SessionLauncher {
             .context("verify session socket readiness")?;
         drop(readiness_probe);
 
+        let bound_socket = BoundSocket::new(&path);
+        let pty_ready = PtyReady::new(&path);
+        let client_ready = ClientReady::new(&path);
         let handle = session
-            .start()
+            .start(bound_socket, pty_ready, client_ready)
             .context("transition resolved session to running")?;
         let master = MasterSession::new(path, listener, pty, &self.config, observer)?;
 

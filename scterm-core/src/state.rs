@@ -5,40 +5,83 @@
 )]
 
 use std::marker::PhantomData;
+use std::{io::ErrorKind, os::unix::net::UnixStream};
 
 use crate::SessionPath;
 
 /// A resolved session that has not yet entered the running state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug)]
 pub struct Resolved;
 
 /// A session whose runtime readiness checks have completed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug)]
 pub struct Running;
 
 /// A session whose socket path is stale.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug)]
 pub struct Stale;
 
 /// An attach client replaying log history from disk.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug)]
 pub struct LogReplaying;
 
 /// An attach client connecting to the session socket.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug)]
 pub struct Connecting;
 
 /// An attach client replaying in-memory ring history.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug)]
 pub struct RingReplaying;
 
 /// An attach client streaming live PTY output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug)]
 pub struct Live;
 
 /// An attach client that has detached.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug)]
 pub struct Detached;
+
+/// Proof that the session control socket has been bound for startup.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BoundSocket {
+    path: SessionPath,
+}
+
+impl BoundSocket {
+    /// Creates a bound-socket readiness proof for `path`.
+    #[must_use]
+    pub fn new(path: &SessionPath) -> Self {
+        Self { path: path.clone() }
+    }
+}
+
+/// Proof that the PTY-backed child process has been spawned for startup.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PtyReady {
+    path: SessionPath,
+}
+
+impl PtyReady {
+    /// Creates a PTY-readiness proof for `path`.
+    #[must_use]
+    pub fn new(path: &SessionPath) -> Self {
+        Self { path: path.clone() }
+    }
+}
+
+/// Proof that a fresh client can connect to the session socket.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClientReady {
+    path: SessionPath,
+}
+
+impl ClientReady {
+    /// Creates a client-readiness proof for `path`.
+    #[must_use]
+    pub fn new(path: &SessionPath) -> Self {
+        Self { path: path.clone() }
+    }
+}
 
 /// A typestated session handle.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -69,12 +112,34 @@ impl Session<Resolved> {
 
     /// Transitions a resolved session into the running state.
     ///
-    /// Phase 1 exposes the consuming transition contract only. Later phases
-    /// wire this method to the runtime startup path.
-    ///
     /// # Errors
-    /// Returns [`crate::ScError`] when the runtime startup path fails.
-    pub fn start(self) -> Result<Session<Running>, crate::ScError> {
+    /// Returns [`crate::ScError`] when the readiness artifacts do not all prove
+    /// startup for this session path.
+    pub fn start(
+        self,
+        bound_socket: BoundSocket,
+        pty_ready: PtyReady,
+        client_ready: ClientReady,
+    ) -> Result<Session<Running>, crate::ScError> {
+        let BoundSocket {
+            path: bound_socket_path,
+        } = bound_socket;
+        let PtyReady {
+            path: pty_ready_path,
+        } = pty_ready;
+        let ClientReady {
+            path: client_ready_path,
+        } = client_ready;
+
+        if bound_socket_path != self.path
+            || pty_ready_path != self.path
+            || client_ready_path != self.path
+        {
+            return Err(crate::ScError::invalid_value(
+                "startup readiness artifacts do not match the target session path",
+            ));
+        }
+
         Ok(Session {
             path: self.path,
             _state: PhantomData,
@@ -86,7 +151,18 @@ impl Session<Resolved> {
     /// # Errors
     /// Returns `Err(Session<Stale>)` when the path resolves to a stale session.
     pub fn check_stale(self) -> Result<Self, Session<Stale>> {
-        Ok(self)
+        match UnixStream::connect(self.path.as_path()) {
+            Ok(stream) => {
+                drop(stream);
+                Ok(self)
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(self),
+            Err(error) if error.kind() == ErrorKind::ConnectionRefused => Err(Session {
+                path: self.path,
+                _state: PhantomData,
+            }),
+            Err(_) => Ok(self),
+        }
     }
 }
 
@@ -166,7 +242,7 @@ impl AttachClient<Connecting> {
 
     /// Transitions directly into live streaming when ring replay is skipped.
     #[must_use]
-    pub fn go_live(self) -> AttachClient<Live> {
+    pub fn go_live_skip_ring(self) -> AttachClient<Live> {
         AttachClient {
             path: self.path,
             _state: PhantomData,
@@ -213,11 +289,26 @@ impl<S> AttachClient<S> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AttachClient, Connecting, Detached, Live, LogReplaying, Resolved, RingReplaying, Running,
-        Session, Stale,
+        AttachClient, BoundSocket, ClientReady, Connecting, Detached, Live, LogReplaying, PtyReady,
+        Resolved, RingReplaying, Running, Session, Stale,
     };
     use crate::SessionPath;
     use std::marker::PhantomData;
+    use std::os::unix::net::UnixListener;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_socket_path(label: &str) -> SessionPath {
+        let path = std::env::temp_dir().join(format!(
+            "scterm-core-state-{label}-{}-{}.sock",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&path);
+        SessionPath::new(path).expect("session path")
+    }
 
     #[test]
     fn session_typestate_wraps_a_validated_path() {
@@ -241,7 +332,11 @@ mod tests {
     fn session_transitions_consume_and_preserve_the_path() {
         let path = SessionPath::new("/tmp/session").expect("session path");
         let running = Session::<Resolved>::new_resolved(path.clone())
-            .start()
+            .start(
+                BoundSocket::new(&path),
+                PtyReady::new(&path),
+                ClientReady::new(&path),
+            )
             .expect("start transition");
         let running_path = running.into_path();
 
@@ -276,8 +371,66 @@ mod tests {
             path: path.clone(),
             _state: PhantomData,
         }
-        .go_live();
+        .go_live_skip_ring();
         assert_eq!(live_direct.into_path(), path);
+    }
+
+    #[test]
+    fn start_rejects_readiness_artifacts_for_the_wrong_path() {
+        let path = SessionPath::new("/tmp/session").expect("session path");
+        let wrong_path = SessionPath::new("/tmp/other").expect("wrong path");
+        let session = Session::<Resolved>::new_resolved(path);
+
+        let error = session
+            .start(
+                BoundSocket::new(&wrong_path),
+                PtyReady::new(&wrong_path),
+                ClientReady::new(&wrong_path),
+            )
+            .expect_err("mismatched artifacts must fail");
+
+        assert!(error.is_invalid_value());
+    }
+
+    #[test]
+    fn check_stale_reports_missing_socket_as_resolved() {
+        let path = unique_socket_path("missing");
+        let resolved = Session::<Resolved>::new_resolved(path.clone())
+            .check_stale()
+            .expect("missing socket is not stale");
+
+        assert_eq!(
+            resolved.into_path().as_path().file_name(),
+            path.as_path().file_name()
+        );
+    }
+
+    #[test]
+    fn check_stale_reports_listening_socket_as_resolved() {
+        let path = unique_socket_path("live");
+        let listener = UnixListener::bind(path.as_path()).expect("bind live socket");
+
+        let resolved = Session::<Resolved>::new_resolved(path.clone())
+            .check_stale()
+            .expect("listening socket is not stale");
+
+        assert_eq!(resolved.into_path(), path);
+        drop(listener);
+        let _ = std::fs::remove_file(path.as_path());
+    }
+
+    #[test]
+    fn check_stale_reports_connection_refused_as_stale() {
+        let path = unique_socket_path("stale");
+        let listener = UnixListener::bind(path.as_path()).expect("bind stale socket");
+        drop(listener);
+
+        let stale = Session::<Resolved>::new_resolved(path.clone())
+            .check_stale()
+            .expect_err("unbound socket path must be stale");
+
+        assert_eq!(stale.into_path(), path);
+        let _ = std::fs::remove_file(path.as_path());
     }
 
     #[test]

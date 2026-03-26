@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use nix::pty::openpty;
 use scterm_app::{
-    attached_state, log_path_for_session, set_attached_state, AppLogger, AttachSession,
-    MasterConfig, NoopOutputObserver, OutputObserver, PersistentLog, SessionLauncher,
+    log_path_for_session, AppLogger, AttachSession, MasterConfig, NoopOutputObserver,
+    OutputObserver, PersistentLog, SessionLauncher,
 };
 use scterm_core::{AttachRequest, LogCap, RingSize, Session, SessionPath, WindowSize};
 use scterm_unix::{PtyCommand, SocketTransport};
@@ -36,20 +36,6 @@ fn persistent_log_caps_to_the_latest_bytes() -> Result<()> {
     log.append(b"cdef")?;
 
     assert_eq!(log.replay()?, b"cdef");
-    Ok(())
-}
-
-#[test]
-fn attached_state_metadata_tracks_the_owner_execute_bit() -> Result<()> {
-    let tempdir = TempDir::new()?;
-    let path = tempdir.path().join("socket");
-    std::os::unix::net::UnixListener::bind(&path)?;
-
-    set_attached_state(&path, false)?;
-    assert!(!attached_state(&path)?);
-
-    set_attached_state(&path, true)?;
-    assert!(attached_state(&path)?);
     Ok(())
 }
 
@@ -126,8 +112,9 @@ fn attach_session_replays_log_before_connecting_and_sends_attach_packets() -> Re
     log.append(b"log-history")?;
     let attach = AttachSession::new(path);
 
-    let (connecting, history) = attach.replay_log(&log)?;
+    let (log_replaying, history) = attach.replay_log(&log)?;
     assert_eq!(history, b"log-history");
+    let connecting = attach.finish_log_replay(log_replaying);
 
     let server = std::thread::spawn(move || -> Result<[u8; scterm_core::PACKET_SIZE]> {
         let mut stream = listener.accept()?;

@@ -156,3 +156,23 @@ pub fn set_attached_state(path: &Path, attached: bool) -> Result<()> {
     fs::set_permissions(path, permissions)
         .with_context(|| format!("update attached-state metadata for {}", path.display()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{attached_state, set_attached_state};
+    use anyhow::Result;
+
+    #[test]
+    fn attached_state_metadata_tracks_the_owner_execute_bit() -> Result<()> {
+        let tempdir = tempfile::TempDir::new()?;
+        let path = tempdir.path().join("socket");
+        std::os::unix::net::UnixListener::bind(&path)?;
+
+        set_attached_state(&path, false)?;
+        assert!(!attached_state(&path)?);
+
+        set_attached_state(&path, true)?;
+        assert!(attached_state(&path)?);
+        Ok(())
+    }
+}

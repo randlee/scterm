@@ -18,4 +18,4 @@ pub use master::{
     SessionLauncher, StartedSession,
 };
 #[doc(inline)]
-pub use storage::{attached_state, log_path_for_session, set_attached_state, PersistentLog};
+pub use storage::{attached_state, log_path_for_session, PersistentLog};

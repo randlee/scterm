@@ -23,8 +23,8 @@ pub use packet::{
 pub use ring::RingBuffer;
 #[doc(inline)]
 pub use state::{
-    AttachClient, Connecting, Detached, Live, LogReplaying, Resolved, RingReplaying, Running,
-    Session, Stale,
+    AttachClient, BoundSocket, ClientReady, Connecting, Detached, Live, LogReplaying, PtyReady,
+    Resolved, RingReplaying, Running, Session, Stale,
 };
 #[doc(inline)]
 pub use types::{LogCap, RingSize, SessionName, SessionPath};

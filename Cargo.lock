@@ -270,6 +270,7 @@ dependencies = [
  "anyhow",
  "nix",
  "sc-observability",
+ "sc-observability-types",
  "scterm-core",
  "scterm-unix",
  "serde_json",
