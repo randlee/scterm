@@ -11,8 +11,6 @@ repository.workspace = true
 
 [dependencies]
 anyhow = "1"
-sc-observability = { path = "../../../sc-observability/crates/sc-observability" }
-sc-observability-types = { path = "../../../sc-observability/crates/sc-observability-types" }
 serde_json = "1"
 scterm-core = { path = "../scterm-core" }
 scterm-unix = { path = "../scterm-unix" }
