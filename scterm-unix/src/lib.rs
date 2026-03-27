@@ -5,6 +5,7 @@
 
 mod error;
 mod process;
+mod process_lock;
 mod pty;
 mod raw_mode;
 mod signal;
@@ -13,6 +14,9 @@ mod socket;
 mod sealed {
     pub trait Sealed {}
 }
+
+#[doc(hidden)]
+pub(crate) use process_lock::cwd_sensitive_filesystem_lock;
 
 #[doc(inline)]
 pub use error::UnixError;

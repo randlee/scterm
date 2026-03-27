@@ -325,6 +325,21 @@ fn wait_for(
     Err(anyhow!("timed out waiting for {description}"))
 }
 
+fn assert_absent_for(
+    mut predicate: impl FnMut() -> bool,
+    duration: Duration,
+    description: &str,
+) -> Result<()> {
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+        if predicate() {
+            return Err(anyhow!("{description} became present unexpectedly"));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    Ok(())
+}
+
 fn stdout(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
@@ -521,8 +536,11 @@ fn disabled_log_cap_skips_log_creation() -> Result<()> {
     let start = env.run(&["start", "-C", "0", "nolog", "/bin/sh", "-c", "sleep 30"])?;
     assert!(start.status.success(), "{}", output_text(&start));
     env.wait_for_socket("nolog")?;
-    thread::sleep(Duration::from_millis(200));
-    assert!(!env.session_log("nolog").exists());
+    assert_absent_for(
+        || env.session_log("nolog").exists(),
+        Duration::from_millis(500),
+        "nolog log file",
+    )?;
 
     env.cleanup_session("nolog");
     Ok(())
@@ -651,7 +669,15 @@ fn stale_session_is_reported_and_can_be_recreated() -> Result<()> {
         Signal::SIGKILL,
     )?;
     let _ = run_child.wait();
-    thread::sleep(Duration::from_millis(150));
+    wait_for(
+        || {
+            env.run(&["list"])
+                .map(|output| output_text(&output).contains("[stale]"))
+                .unwrap_or(false)
+        },
+        Duration::from_secs(3),
+        "stale-case to become stale in list output",
+    )?;
 
     let list = env.run(&["list"])?;
     assert!(

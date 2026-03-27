@@ -12,10 +12,9 @@ use std::os::unix::fs::FileTypeExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
-use scterm_core::{cwd_sensitive_filesystem_lock, SessionPath};
-
 use crate::sealed::Sealed;
-use crate::{SocketTransport, UnixError};
+use crate::{cwd_sensitive_filesystem_lock, SocketTransport, UnixError};
+use scterm_core::SessionPath;
 
 /// A Unix-domain socket transport implementation.
 #[derive(Debug, Clone, Copy, Default)]

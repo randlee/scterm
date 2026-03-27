@@ -7,7 +7,7 @@
     reason = "This adapter is runtime-oriented and not improved by const qualification."
 )]
 
-use scterm_core::{cwd_sensitive_filesystem_lock, SessionName};
+use scterm_core::SessionName;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
@@ -294,9 +294,6 @@ fn synthesize_message_id(message: &RawMessage) -> String {
 }
 
 fn load_dedup(path: &Path) -> Result<HashSet<String>, AtmError> {
-    let _lock = cwd_sensitive_filesystem_lock()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if !path.exists() {
         return Ok(HashSet::new());
     }
@@ -313,9 +310,6 @@ fn load_dedup(path: &Path) -> Result<HashSet<String>, AtmError> {
 }
 
 fn persist_dedup(path: &Path, message_id: &str) -> Result<(), AtmError> {
-    let _lock = cwd_sensitive_filesystem_lock()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(AtmError::DedupPersistence)?;
     }
@@ -350,7 +344,17 @@ mod tests {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let previous = std::env::var_os("PATH");
-            set_path_with_fake_atm(fake_root, previous.as_deref())?;
+            let mut paths = vec![fake_root.to_path_buf()];
+            if let Some(previous) = previous.as_deref() {
+                paths.extend(std::env::split_paths(previous));
+            }
+            let joined: OsString = std::env::join_paths(paths)?;
+            // SAFETY: guarded by PATH_LOCK via PathGuard; these tests mutate PATH only while
+            // holding the process-wide mutex so no concurrent environment access occurs here.
+            #[allow(unsafe_code, reason = "test-only PATH mutation under PATH_LOCK")]
+            unsafe {
+                std::env::set_var("PATH", joined);
+            }
             Ok(Self {
                 _lock: lock,
                 previous,
@@ -531,24 +535,6 @@ mod tests {
         let mut permissions = fs::metadata(&path)?.permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&path, permissions)?;
-        Ok(())
-    }
-
-    fn set_path_with_fake_atm(
-        fake_root: &std::path::Path,
-        old_path: Option<&std::ffi::OsStr>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut paths = vec![fake_root.to_path_buf()];
-        if let Some(old_path) = old_path {
-            paths.extend(std::env::split_paths(old_path));
-        }
-        let joined: OsString = std::env::join_paths(paths)?;
-        // SAFETY: guarded by PATH_LOCK; these tests mutate PATH only while holding
-        // the process-wide mutex so no concurrent environment access occurs here.
-        #[allow(unsafe_code, reason = "test-only PATH mutation under PATH_LOCK")]
-        unsafe {
-            std::env::set_var("PATH", joined);
-        }
         Ok(())
     }
 }
