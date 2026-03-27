@@ -9,6 +9,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
+use nix::libc;
 use nix::poll::{poll, PollFd, PollFlags};
 use nix::pty::{openpty, Winsize};
 use nix::sys::signal::{kill, Signal};
@@ -90,16 +91,7 @@ impl TestEnv {
     }
 
     fn spawn_pty_with_size(&self, args: &[&str], rows: u16, cols: u16) -> Result<PtyChild> {
-        let pty = openpty(
-            Some(&Winsize {
-                ws_row: rows,
-                ws_col: cols,
-                ws_xpixel: 0,
-                ws_ypixel: 0,
-            }),
-            None,
-        )
-        .context("open PTY")?;
+        let pty = open_test_pty(rows, cols, "open PTY")?;
         let master = File::from(pty.master);
         let slave = File::from(pty.slave);
 
@@ -139,7 +131,7 @@ impl TestEnv {
     fn wait_for_socket(&self, name: &str) -> Result<()> {
         wait_for(
             || self.session_socket(name).exists(),
-            Duration::from_secs(3),
+            Duration::from_secs(5),
             &format!("socket for {name}"),
         )
     }
@@ -283,17 +275,32 @@ impl PtyChild {
     }
 }
 
+fn open_test_pty(rows: u16, cols: u16, context: &str) -> Result<nix::pty::OpenptyResult> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match openpty(
+            Some(&Winsize {
+                ws_row: rows,
+                ws_col: cols,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            }),
+            None,
+        ) {
+            Ok(pty) => return Ok(pty),
+            Err(error) => {
+                let io_error = io::Error::from(error);
+                if io_error.raw_os_error() != Some(libc::ENXIO) || Instant::now() >= deadline {
+                    return Err(io_error).context(context.to_string());
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
+}
+
 fn probe_pty() -> Result<()> {
-    let _pty = openpty(
-        Some(&Winsize {
-            ws_row: 24,
-            ws_col: 80,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        }),
-        None,
-    )
-    .context("probe PTY availability")?;
+    let _pty = open_test_pty(24, 80, "probe PTY availability")?;
     Ok(())
 }
 
