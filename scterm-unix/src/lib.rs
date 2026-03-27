@@ -17,7 +17,7 @@ mod sealed {
 pub use error::UnixError;
 pub use process::{create_process_group, daemonize, DaemonizeOutcome};
 pub use pty::{PtyCommand, PtyProcess, UnixPtyBackend};
-pub use raw_mode::RawModeGuard;
+pub use raw_mode::{terminal_window_size, RawModeGuard};
 pub use signal::{SignalEvent, SignalWatcher};
 pub use socket::{UnixSocketListener, UnixSocketStream, UnixSocketTransport};
 

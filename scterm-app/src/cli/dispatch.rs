@@ -9,13 +9,17 @@ use super::{
     EXIT_STALE, EXIT_START_TIMEOUT, EXIT_SUCCESS, START_TIMEOUT,
 };
 use anyhow::{Context, Result};
+use nix::errno::Errno;
 use nix::poll::{poll, PollFd, PollFlags};
-use nix::sys::signal::Signal;
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::getpid;
 use scterm_core::{
     session_env_var_name, AncestryChain, KillRequest, LogCap, Packet, PushData, RedrawMethod,
     RingSize, Session, SessionPath,
 };
-use scterm_unix::{PtyCommand, RawModeGuard, SocketTransport, UnixSocketTransport};
+use scterm_unix::{
+    PtyCommand, RawModeGuard, SignalEvent, SignalWatcher, SocketTransport, UnixSocketTransport,
+};
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -372,7 +376,14 @@ fn wait_for_startup(path: &SessionPath) -> Result<(), CliError> {
     let deadline = Instant::now() + START_TIMEOUT;
     while Instant::now() < deadline {
         match transport.connect(path) {
-            Ok(_) => return Ok(()),
+            Ok(_) => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                match transport.connect(path) {
+                    Ok(_) => return Ok(()),
+                    Err(error) if error.is_absent_session() || error.is_stale_socket() => {}
+                    Err(error) => return Err(unix_error(error)),
+                }
+            }
             Err(error) if error.is_absent_session() || error.is_stale_socket() => {
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
@@ -421,14 +432,15 @@ fn attach_to_session(
 
     let connecting = attach.finish_log_replay(log_replaying);
     let (ring_replaying, mut stream) = attach.connect(connecting, false).map_err(runtime_error)?;
-    let size = current_window_size();
+    let stdin = io::stdin();
+    let size = current_window_size(&stdin);
     attach
         .request_redraw(&mut stream, size)
         .map_err(runtime_error)?;
     let _live = ring_replaying.go_live();
 
-    let stdin = io::stdin();
     let _raw_mode = RawModeGuard::new(&stdin).map_err(unix_error)?;
+    let mut signal_watcher = SignalWatcher::new().map_err(unix_error)?;
     let mut stdout = io::stdout().lock();
     let mut inbound = [0_u8; 4096];
     let mut outbound = [0_u8; 1024];
@@ -438,9 +450,15 @@ fn attach_to_session(
             PollFd::new(stream.as_fd(), PollFlags::POLLIN),
             PollFd::new(stdin.as_fd(), PollFlags::POLLIN),
         ];
-        poll(&mut poll_fds, 250_u16).map_err(|error| {
-            CliError::new(EXIT_GENERAL, format!("poll attach streams: {error}"))
-        })?;
+        match poll(&mut poll_fds, 250_u16) {
+            Ok(_) | Err(Errno::EINTR) => {}
+            Err(error) => {
+                return Err(CliError::new(
+                    EXIT_GENERAL,
+                    format!("poll attach streams: {error}"),
+                ));
+            }
+        }
 
         let socket_ready = poll_fds[0]
             .revents()
@@ -449,6 +467,12 @@ fn attach_to_session(
             .revents()
             .is_some_and(|flags| flags.contains(PollFlags::POLLIN));
         let _ = poll_fds;
+
+        for event in signal_watcher.pending() {
+            if matches!(event, SignalEvent::WindowChange) {
+                send_winch(&mut stream, current_window_size(&stdin))?;
+            }
+        }
 
         if socket_ready {
             let read = stream.read(&mut inbound).map_err(unix_error)?;
@@ -473,10 +497,13 @@ fn attach_to_session(
             let mut to_send = Vec::with_capacity(read);
             for byte in &outbound[..read] {
                 if detach_char.is_some_and(|detach| *byte == detach) {
-                    stream
-                        .write_all(&Packet::Detach.encode())
-                        .and_then(|()| stream.flush())
-                        .map_err(unix_error)?;
+                    send_detach(&mut stream)?;
+                    return Ok(());
+                }
+                if *byte == 0x1a {
+                    send_detach(&mut stream)?;
+                    kill(getpid(), Signal::SIGSTOP)
+                        .map_err(|error| CliError::new(EXIT_GENERAL, error.to_string()))?;
                     return Ok(());
                 }
                 to_send.push(*byte);
@@ -484,6 +511,23 @@ fn attach_to_session(
             send_push_bytes(&mut stream, &to_send)?;
         }
     }
+}
+
+fn send_detach(stream: &mut scterm_unix::UnixSocketStream) -> Result<(), CliError> {
+    stream
+        .write_all(&Packet::Detach.encode())
+        .and_then(|()| stream.flush())
+        .map_err(unix_error)
+}
+
+fn send_winch(
+    stream: &mut scterm_unix::UnixSocketStream,
+    size: scterm_core::WindowSize,
+) -> Result<(), CliError> {
+    stream
+        .write_all(&Packet::Winch(size).encode())
+        .and_then(|()| stream.flush())
+        .map_err(unix_error)
 }
 
 fn send_push_bytes(
@@ -514,7 +558,7 @@ fn internal_master_main(
     let started = launcher.start(
         Session::new_resolved(path),
         &command,
-        Some(current_window_size()),
+        Some(current_window_size(&io::stdin())),
         NoopOutputObserver,
     )?;
     let mut master = started.into_master();
@@ -585,11 +629,7 @@ fn drive_master(master: &mut MasterSession) -> Result<()> {
 
         let mut removals = Vec::new();
         for (client_id, ready, hung_up) in client_events {
-            if !ready {
-                if hung_up {
-                    let _ = master.detach_client_by_id(client_id);
-                    removals.push(client_id);
-                }
+            if !ready && !hung_up {
                 continue;
             }
             let Some(client) = read_clients
@@ -598,10 +638,28 @@ fn drive_master(master: &mut MasterSession) -> Result<()> {
             else {
                 continue;
             };
-            let mut bytes = [0_u8; scterm_core::PACKET_SIZE];
-            if client.stream.read_exact(&mut bytes).is_ok() {
-                handle_client_packet(master, client, Packet::decode(bytes)?)?;
-            } else {
+
+            loop {
+                let mut bytes = [0_u8; scterm_core::PACKET_SIZE];
+                if client.stream.read_exact(&mut bytes).is_ok() {
+                    handle_client_packet(master, client, Packet::decode(bytes)?)?;
+                } else {
+                    let _ = master.detach_client_by_id(client_id);
+                    removals.push(client_id);
+                    break;
+                }
+
+                let mut pending = [PollFd::new(client.stream.as_fd(), PollFlags::POLLIN)];
+                let more_ready = poll(&mut pending, 0_u8)? > 0
+                    && pending[0]
+                        .revents()
+                        .is_some_and(|flags| flags.contains(PollFlags::POLLIN));
+                if !more_ready {
+                    break;
+                }
+            }
+
+            if hung_up && !removals.contains(&client_id) {
                 let _ = master.detach_client_by_id(client_id);
                 removals.push(client_id);
             }
@@ -642,11 +700,17 @@ fn handle_client_packet(
             }
         }
         Packet::Push(data) => master.enqueue_push_input(data.as_slice().to_vec()),
-        Packet::Winch(size) => master.resize_pty(size)?,
+        Packet::Winch(size) => {
+            master.resize_pty(size)?;
+            master.signal_child_group(Signal::SIGWINCH)?;
+        }
         Packet::Redraw(request) => match request.method() {
             RedrawMethod::None | RedrawMethod::Unspecified => {}
             RedrawMethod::CtrlL => master.enqueue_redraw_input(vec![0x0c]),
-            RedrawMethod::Winch => master.resize_pty(request.size())?,
+            RedrawMethod::Winch => {
+                master.resize_pty(request.size())?;
+                master.signal_child_group(Signal::SIGWINCH)?;
+            }
         },
         Packet::Kill(request) => {
             if let Ok(signal) = Signal::try_from(i32::from(request.signal())) {

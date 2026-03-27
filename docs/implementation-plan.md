@@ -69,7 +69,7 @@ Deliver in `scterm-app`:
 - session log replay
 - ring replay orchestration
 - PTY input serialization
-- structured logging setup via `sc-observability`
+- structured logging setup via `AppLogger` (serde_json + std::io)
 - no active Sprint 1 output-observer behavior beyond a reserved passive hook
 
 Done when:

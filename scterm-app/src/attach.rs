@@ -87,7 +87,7 @@ impl AttachSession {
         let mut stream = self.transport.connect(state.path())?;
         let attach = Packet::Attach(AttachRequest::new(skip_ring_replay)).encode();
         stream
-            .write(&attach)
+            .write_all(&attach)
             .context("write attach packet to session socket")?;
         stream.flush().context("flush attach packet")?;
         Ok((state.begin_ring_replay(), stream))
@@ -100,7 +100,7 @@ impl AttachSession {
     pub fn request_redraw(&self, stream: &mut UnixSocketStream, size: WindowSize) -> Result<()> {
         let redraw = Packet::Redraw(RedrawRequest::new(RedrawMethod::Winch, size)).encode();
         stream
-            .write(&redraw)
+            .write_all(&redraw)
             .context("write redraw packet to session socket")?;
         stream.flush().context("flush redraw packet")
     }
@@ -181,7 +181,7 @@ where
     pub fn detach(mut self) -> Result<AttachClient<Detached>> {
         let detach = Packet::Detach.encode();
         self.stream
-            .write(&detach)
+            .write_all(&detach)
             .context("write detach packet to session socket")?;
         self.stream.flush().context("flush detach packet")?;
         let detached = self.state.detach();

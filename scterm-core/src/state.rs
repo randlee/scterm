@@ -97,7 +97,7 @@ impl Session<Resolved> {
     /// ```
     /// use scterm_core::{Resolved, Session, SessionPath};
     ///
-    /// let path = SessionPath::new("/tmp/demo.sock")?;
+    /// let path = SessionPath::new("/run/scterm/demo.sock")?;
     /// let session = Session::<Resolved>::new_resolved(path.clone());
     /// assert_eq!(session.path(), &path);
     /// # Ok::<(), scterm_core::ScError>(())
@@ -207,7 +207,7 @@ impl AttachClient<LogReplaying> {
     /// ```
     /// use scterm_core::{AttachClient, LogReplaying, SessionPath};
     ///
-    /// let path = SessionPath::new("/tmp/demo.sock")?;
+    /// let path = SessionPath::new("/run/scterm/demo.sock")?;
     /// let client = AttachClient::<LogReplaying>::new_log_replaying(path.clone());
     /// assert_eq!(client.path(), &path);
     /// # Ok::<(), scterm_core::ScError>(())

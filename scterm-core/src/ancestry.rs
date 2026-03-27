@@ -153,7 +153,7 @@ mod tests {
     fn env_var_name_tracks_binary_basename() {
         assert_eq!(session_env_var_name("scterm"), "SCTERM_SESSION");
         assert_eq!(
-            session_env_var_name("/tmp/bin/ssh2incus-atch"),
+            session_env_var_name("/run/scterm/bin/ssh2incus-atch"),
             "SSH2INCUS_ATCH_SESSION"
         );
     }

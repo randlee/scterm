@@ -34,14 +34,16 @@ impl PersistentLog {
                 .with_context(|| format!("create log directory {}", parent.display()))?;
         }
 
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(&path)
-            .with_context(|| format!("open session log {}", path.display()))?;
-        file.set_permissions(fs::Permissions::from_mode(OWNER_ONLY_FILE_MODE))
-            .with_context(|| format!("set session log permissions for {}", path.display()))?;
+        if !cap.is_disabled() {
+            let file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .read(true)
+                .open(&path)
+                .with_context(|| format!("open session log {}", path.display()))?;
+            file.set_permissions(fs::Permissions::from_mode(OWNER_ONLY_FILE_MODE))
+                .with_context(|| format!("set session log permissions for {}", path.display()))?;
+        }
 
         Ok(Self { path, cap })
     }
@@ -69,7 +71,13 @@ impl PersistentLog {
     /// # Errors
     /// Returns an error when the log cannot be read.
     pub fn replay(&self) -> Result<Vec<u8>> {
-        fs::read(&self.path).with_context(|| format!("read session log {}", self.path.display()))
+        match fs::read(&self.path) {
+            Ok(bytes) => Ok(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+            Err(error) => {
+                Err(error).with_context(|| format!("read session log {}", self.path.display()))
+            }
+        }
     }
 
     /// Clears the current log contents.
@@ -77,8 +85,13 @@ impl PersistentLog {
     /// # Errors
     /// Returns an error when the log cannot be truncated.
     pub fn clear(&self) -> Result<()> {
-        fs::write(&self.path, [])
-            .with_context(|| format!("clear session log {}", self.path.display()))
+        match fs::write(&self.path, []) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => {
+                Err(error).with_context(|| format!("clear session log {}", self.path.display()))
+            }
+        }
     }
 
     /// Appends the session end marker.

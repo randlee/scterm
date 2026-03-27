@@ -56,7 +56,7 @@ impl ScError {
     /// use scterm_core::ScError;
     /// use std::path::Path;
     ///
-    /// let error = ScError::session_not_found(Path::new("/tmp/demo"));
+    /// let error = ScError::session_not_found(Path::new("/run/scterm/demo"));
     /// assert!(error.is_session_not_found());
     /// ```
     #[must_use]
@@ -71,7 +71,7 @@ impl ScError {
     /// use scterm_core::ScError;
     /// use std::path::Path;
     ///
-    /// let error = ScError::stale_socket(Path::new("/tmp/demo"));
+    /// let error = ScError::stale_socket(Path::new("/run/scterm/demo"));
     /// assert!(error.is_stale_socket());
     /// ```
     #[must_use]
@@ -86,7 +86,7 @@ impl ScError {
     /// use scterm_core::ScError;
     /// use std::path::Path;
     ///
-    /// let error = ScError::self_attach_loop(Path::new("/tmp/demo"));
+    /// let error = ScError::self_attach_loop(Path::new("/run/scterm/demo"));
     /// assert!(error.is_self_attach_loop());
     /// ```
     #[must_use]

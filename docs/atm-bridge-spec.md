@@ -71,5 +71,5 @@ Rules:
 
 ## Logging Policy
 
-ATM bridge activity should be logged through the app-owned `sc-observability`
-logger, not through direct stdout/stderr noise in the session.
+ATM bridge activity should be logged through the app-owned `AppLogger`,
+not through direct stdout/stderr noise in the session.

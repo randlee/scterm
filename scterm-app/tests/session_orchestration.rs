@@ -1,31 +1,15 @@
 //! Integration tests for `scterm-app` session orchestration.
 
-use std::os::fd::OwnedFd;
-use std::sync::{Arc, Mutex};
-
 use anyhow::Result;
 use nix::pty::openpty;
 use scterm_app::{
     log_path_for_session, AppLogger, AttachSession, MasterConfig, NoopOutputObserver,
-    OutputObserver, PersistentLog, SessionLauncher,
+    PersistentLog, SessionLauncher,
 };
 use scterm_core::{AttachRequest, LogCap, RingSize, Session, SessionPath, WindowSize};
 use scterm_unix::{PtyCommand, SocketTransport};
+use std::os::fd::OwnedFd;
 use tempfile::TempDir;
-
-#[derive(Debug, Default, Clone)]
-struct RecordingObserver {
-    records: Arc<Mutex<Vec<Vec<u8>>>>,
-}
-
-impl OutputObserver for RecordingObserver {
-    fn observe(&self, bytes: &[u8]) {
-        self.records
-            .lock()
-            .expect("observer records")
-            .push(bytes.to_vec());
-    }
-}
 
 #[test]
 fn persistent_log_caps_to_the_latest_bytes() -> Result<()> {
@@ -43,7 +27,6 @@ fn persistent_log_caps_to_the_latest_bytes() -> Result<()> {
 fn master_records_pre_attach_output_without_broadcasting() -> Result<()> {
     let tempdir = TempDir::new()?;
     let path = SessionPath::new(tempdir.path().join("session.sock"))?;
-    let observer = RecordingObserver::default();
     let launcher = SessionLauncher::new(MasterConfig::new(
         RingSize::new(64)?,
         LogCap::from_bytes(1024),
@@ -54,7 +37,7 @@ fn master_records_pre_attach_output_without_broadcasting() -> Result<()> {
         Session::new_resolved(path),
         &command,
         Some(WindowSize::new(24, 80, 0, 0)),
-        observer.clone(),
+        NoopOutputObserver,
     )?;
     let mut master = started.into_master();
 
@@ -63,7 +46,6 @@ fn master_records_pre_attach_output_without_broadcasting() -> Result<()> {
     assert_eq!(summary.delivered_clients(), 0);
     assert_eq!(master.log().replay()?, b"before-attach");
     assert_eq!(master.ring_snapshot(), b"before-attach");
-    assert_eq!(observer.records.lock().expect("observer data").len(), 1);
     Ok(())
 }
 
@@ -171,5 +153,61 @@ fn app_logger_writes_jsonl_events() -> Result<()> {
     let contents = std::fs::read_to_string(logger.path())?;
     assert!(contents.contains("\"target\":\"master\""));
     assert!(contents.contains("\"action\":\"start\""));
+    Ok(())
+}
+
+#[test]
+fn session_launcher_reports_exec_handshake_failures() -> Result<()> {
+    let tempdir = TempDir::new()?;
+    let path = SessionPath::new(tempdir.path().join("bad.sock"))?;
+    let launcher = SessionLauncher::new(MasterConfig::new(
+        RingSize::new(64)?,
+        LogCap::from_bytes(1024),
+        tempdir.path().join("app-log"),
+    ));
+    let command = PtyCommand::new("__scterm_no_such_command__")?;
+
+    let Err(error) = launcher.start(
+        Session::new_resolved(path),
+        &command,
+        Some(WindowSize::new(24, 80, 0, 0)),
+        NoopOutputObserver,
+    ) else {
+        panic!("bad command should fail startup");
+    };
+
+    assert!(!error.to_string().is_empty());
+    assert!(!tempdir.path().join("bad.sock").exists());
+    Ok(())
+}
+
+#[test]
+fn attach_request_can_skip_ring_replay_after_log_history_is_covered() -> Result<()> {
+    let tempdir = TempDir::new()?;
+    let path = SessionPath::new(tempdir.path().join("session.sock"))?;
+    let launcher = SessionLauncher::new(MasterConfig::new(
+        RingSize::new(64)?,
+        LogCap::from_bytes(1024),
+        tempdir.path().join("app-log"),
+    ));
+    let command = PtyCommand::new("/bin/sh")?.arg("-c")?.arg("cat")?;
+    let started = launcher.start(
+        Session::new_resolved(path.clone()),
+        &command,
+        Some(WindowSize::new(24, 80, 0, 0)),
+        NoopOutputObserver,
+    )?;
+    let mut master = started.into_master();
+    master.record_pty_output(b"covered-history")?;
+
+    let client = std::thread::spawn(move || {
+        let transport = scterm_unix::UnixSocketTransport;
+        transport.connect(&path).expect("connect session client")
+    });
+    let stream = master.accept_client()?;
+    let ring = master.attach_client(stream, AttachRequest::new(true))?;
+    let _client = client.join().expect("join client");
+
+    assert!(ring.is_empty(), "ring replay should have been skipped");
     Ok(())
 }

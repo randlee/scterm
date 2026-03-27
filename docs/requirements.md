@@ -215,10 +215,9 @@ Option handling requirements:
 
 ### Structured Logging
 
-- Sprint 1 shall use the logging-only `sc-observability` crate from the sibling
-  workspace at `../sc-observability` for structured logging.
-- Sprint 1 shall not depend on any other crate from the sibling
-  `sc-observability` workspace.
+- Structured logging shall use a self-contained `AppLogger` in `scterm-app`
+  implemented with `serde_json` and `std::io`. No external observability crate
+  dependency is required or permitted in this repo.
 - Structured logging shall be an application-layer concern owned by
   `scterm-app` and the final binary wiring.
 - `scterm-core` shall not depend on any observability crate.

@@ -1,9 +1,10 @@
 use super::{CliError, EXIT_GENERAL, EXIT_NOT_FOUND, EXIT_NO_TTY, EXIT_SELF_ATTACH, EXIT_STALE};
 use anyhow::Result;
 use scterm_core::{session_env_var_name, AncestryChain, SessionPath, WindowSize};
-use scterm_unix::{SocketTransport, UnixError, UnixSocketTransport};
+use scterm_unix::{terminal_window_size, SocketTransport, UnixError, UnixSocketTransport};
 use std::env;
 use std::io::{self, IsTerminal};
+use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 
 pub(super) fn current_ancestry_chain(program: &str) -> Result<AncestryChain> {
@@ -118,8 +119,8 @@ pub(super) fn session_state(path: &SessionPath) -> Result<SessionState, CliError
     }
 }
 
-pub(super) fn current_window_size() -> WindowSize {
-    WindowSize::new(24, 80, 0, 0)
+pub(super) fn current_window_size(fd: &impl AsFd) -> WindowSize {
+    terminal_window_size(fd).unwrap_or_else(|_| WindowSize::new(24, 80, 0, 0))
 }
 
 pub(super) fn domain_error(error: impl Into<anyhow::Error>) -> CliError {

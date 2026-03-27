@@ -239,7 +239,11 @@ impl PtyBackend for UnixPtyBackend {
                         let errno = error as i32;
                         let bytes = errno.to_ne_bytes();
                         let _ = write(&status_write, &bytes);
-                        std::process::exit(127);
+                        // SAFETY: This runs in the post-fork child before any Rust
+                        // unwinding or atexit handlers should execute.
+                        unsafe {
+                            libc::_exit(127);
+                        }
                     }
                 }
             }
