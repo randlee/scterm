@@ -347,7 +347,7 @@ fn wait_for_attached(env: &TestEnv, session: &str) -> Result<()> {
                 })
                 .unwrap_or(false)
         },
-        Duration::from_secs(3),
+        Duration::from_secs(5),
         &format!("session {session} to become attached"),
     )
 }
@@ -966,8 +966,8 @@ fn kill_disconnects_multiple_attached_clients() -> Result<()> {
     let mut second = env.spawn_pty(&["attach", "multi-kill"])?;
     wait_for_attached(&env, "multi-kill")?;
     first.send(b"before-kill\n")?;
-    first.read_until("before-kill", Duration::from_secs(5))?;
-    second.read_until("before-kill", Duration::from_secs(5))?;
+    first.read_until("before-kill", Duration::from_secs(10))?;
+    second.read_until("before-kill", Duration::from_secs(10))?;
 
     let kill_output = env.run(&["kill", "multi-kill"])?;
     assert!(

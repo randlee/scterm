@@ -14,11 +14,17 @@ mod sealed {
     pub trait Sealed {}
 }
 
+#[doc(inline)]
 pub use error::UnixError;
+#[doc(inline)]
 pub use process::{create_process_group, daemonize, DaemonizeOutcome};
+#[doc(inline)]
 pub use pty::{PtyCommand, PtyProcess, UnixPtyBackend};
+#[doc(inline)]
 pub use raw_mode::{terminal_window_size, RawModeGuard};
+#[doc(inline)]
 pub use signal::{SignalEvent, SignalWatcher};
+#[doc(inline)]
 pub use socket::{UnixSocketListener, UnixSocketStream, UnixSocketTransport};
 
 /// A sealed PTY backend for Unix platforms.
