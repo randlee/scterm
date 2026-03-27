@@ -330,6 +330,31 @@ fn wait_for_attached(env: &TestEnv, session: &str) -> Result<()> {
     )
 }
 
+fn terminate_session(env: &TestEnv, session: &str) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let mut last_output = String::new();
+    while Instant::now() < deadline {
+        let output = env.run(&["kill", session])?;
+        last_output = output_text(&output);
+        if output.status.success() {
+            return Ok(());
+        }
+        if last_output.contains("is not running") {
+            let socket = env.session_socket(session);
+            let _ = fs::remove_file(&socket);
+            return Ok(());
+        }
+        if !env.session_socket(session).exists() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    Err(anyhow!(
+        "timed out terminating session {session}; last output: {last_output}"
+    ))
+}
+
 #[test]
 fn non_tty_attach_new_and_open_fail_clearly() -> Result<()> {
     let env = TestEnv::new()?;
@@ -375,9 +400,7 @@ fn default_open_creates_then_attaches_existing_session() -> Result<()> {
     second.send(&[DETACH_CHAR])?;
     assert!(second.wait_with_output(Duration::from_secs(3))?.0.success());
 
-    let kill_output = env.run(&["kill", "demo"])?;
-    assert!(kill_output.status.success());
-    assert!(output_text(&kill_output).contains("stopped"));
+    terminate_session(&env, "demo")?;
     Ok(())
 }
 

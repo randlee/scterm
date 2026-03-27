@@ -1,5 +1,5 @@
 [workspace]
-members = ["scterm-core", "scterm-unix", "scterm-app"]
+members = ["scterm-core", "scterm-unix", "scterm-app", "scterm-atm"]
 resolver = "2"
 
 [workspace.package]

@@ -104,11 +104,11 @@ May depend on:
 
 - `scterm-core`
 - `scterm-unix`
+- one application error crate such as `anyhow`
 - `serde_json` (via AppLogger)
 - one application error crate such as `anyhow`
 
 Must not depend on:
-
 Must not know about:
 
 - later observability concerns beyond local structured logging
@@ -132,7 +132,7 @@ Must not depend on:
 
 - `scterm-unix`
 - PTY internals
-- any higher-layer crate from the sibling `sc-observability` workspace
+- any external observability crate
 
 Must not know about:
 

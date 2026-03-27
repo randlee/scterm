@@ -20,7 +20,6 @@ const MSG_DETACH: u8 = 2;
 const MSG_WINCH: u8 = 3;
 const MSG_REDRAW: u8 = 4;
 const MSG_KILL: u8 = 5;
-const MSG_CLEAR: u8 = 6;
 
 /// A terminal window size payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -278,8 +277,6 @@ pub enum Packet {
     Redraw(RedrawRequest),
     /// Requests that the master deliver a signal.
     Kill(KillRequest),
-    /// Clears the session ring buffer and persistent log.
-    Clear,
 }
 
 impl Packet {
@@ -314,9 +311,6 @@ impl Packet {
                 bytes[0] = MSG_KILL;
                 bytes[1] = request.signal;
             }
-            Self::Clear => {
-                bytes[0] = MSG_CLEAR;
-            }
         }
 
         bytes
@@ -343,7 +337,6 @@ impl Packet {
                 WindowSize::from_payload(payload),
             ))),
             MSG_KILL => Ok(Self::Kill(KillRequest::new(bytes[1]))),
-            MSG_CLEAR => Ok(Self::Clear),
             kind => Err(ScError::invalid_packet(format!(
                 "unknown packet type {kind}"
             ))),
@@ -380,7 +373,6 @@ impl fmt::Display for Packet {
                 request.size().cols()
             ),
             Self::Kill(request) => write!(formatter, "Kill(signal={})", request.signal()),
-            Self::Clear => formatter.write_str("Clear"),
         }
     }
 }
@@ -402,7 +394,6 @@ mod tests {
             Packet::Winch(size),
             Packet::Redraw(RedrawRequest::new(RedrawMethod::Winch, size)),
             Packet::Kill(KillRequest::new(15)),
-            Packet::Clear,
         ];
 
         for packet in packets {

@@ -13,48 +13,48 @@ surface opportunistically.
 
 ## `scterm-core`
 
-- [~] `SessionName`
-- [~] `SessionPath`
-- [~] `LogCap`
-- [~] `RingSize`
-- [~] `ScError`
-- [~] packet types and redraw/clear enums
-- [~] ancestry helpers
-- [~] ring buffer type
-- [~] coarse state marker types
+- [x] `SessionName`
+- [x] `SessionPath`
+- [x] `LogCap`
+- [x] `RingSize`
+- [x] `ScError`
+- [x] packet types and redraw/clear enums
+- [x] ancestry helpers
+- [x] ring buffer type
+- [x] coarse state marker types
 
 ## `scterm-unix`
 
 Public API should stay narrow.
 
-- [~] sealed PTY backend trait
-- [~] sealed socket transport trait
-- [~] raw terminal guard
-- [~] Unix runtime error type
+- [x] sealed PTY backend trait
+- [x] sealed socket transport trait
+- [x] raw terminal guard
+- [x] Unix runtime error type
 
 Internal-only:
 
-- [~] daemonization helpers
-- [~] signal wiring details
+- [x] daemonization helpers
+- [x] signal wiring details
 
 ## `scterm-app`
 
-- [~] session/master orchestration entrypoints
-- [~] attach-client orchestration entrypoints
-- [~] command dispatch surface
+- [x] session/master orchestration entrypoints
+- [x] attach-client orchestration entrypoints
+- [x] command dispatch surface
 
 Internal-only:
 
-- [~] logger wiring via `AppLogger`
-- [~] PTY input serialization queue
+- [x] logger wiring via `AppLogger`
+- [x] PTY input serialization queue
 
 ## `scterm-atm`
 
-- [~] ATM watcher service
-- [~] typed inbound message event
-- [~] adapter error type
+- [x] ATM watcher service
+- [x] typed inbound message event
+- [x] adapter error type
 
 Internal-only:
 
-- [~] dedupe persistence details
-- [~] raw CLI parsing helpers
+- [x] dedupe persistence details
+- [x] raw CLI parsing helpers

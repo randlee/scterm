@@ -1,6 +1,7 @@
 //! Integration tests for `scterm-app` session orchestration.
 
 use anyhow::Result;
+use nix::poll::{poll, PollFd, PollFlags};
 use nix::pty::openpty;
 use scterm_app::{
     log_path_for_session, AppLogger, AttachSession, MasterConfig, NoopOutputObserver,
@@ -9,6 +10,7 @@ use scterm_app::{
 use scterm_core::{AttachRequest, LogCap, RingSize, Session, SessionPath, WindowSize};
 use scterm_unix::{PtyCommand, SocketTransport};
 use std::os::fd::OwnedFd;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 #[test]
@@ -209,5 +211,50 @@ fn attach_request_can_skip_ring_replay_after_log_history_is_covered() -> Result<
     let _client = client.join().expect("join client");
 
     assert!(ring.is_empty(), "ring replay should have been skipped");
+    Ok(())
+}
+
+#[test]
+fn master_serializes_inbound_messages_through_the_pty_queue() -> Result<()> {
+    let tempdir = TempDir::new()?;
+    let path = SessionPath::new(tempdir.path().join("atm.sock"))?;
+    let launcher = SessionLauncher::new(MasterConfig::new(
+        RingSize::new(64)?,
+        LogCap::from_bytes(1024),
+        tempdir.path().join("app-log"),
+    ));
+    let command = PtyCommand::new("/bin/sh")?.arg("-c")?.arg("cat")?;
+    let started = launcher.start(
+        Session::new_resolved(path),
+        &command,
+        Some(WindowSize::new(24, 80, 0, 0)),
+        NoopOutputObserver,
+    )?;
+    let mut master = started.into_master();
+
+    master.enqueue_inbound_message(b"[ATM from arch-term]\nbridge hello\r".to_vec());
+    assert!(master.drain_input_queue()? > 0);
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut output = Vec::new();
+    while Instant::now() < deadline {
+        let mut poll_fds = [PollFd::new(master.pty_fd(), PollFlags::POLLIN)];
+        if poll(&mut poll_fds, 100_u16)? == 0 {
+            continue;
+        }
+        let mut buffer = [0_u8; 4096];
+        let read = master.read_pty(&mut buffer)?;
+        if read == 0 {
+            continue;
+        }
+        output.extend_from_slice(&buffer[..read]);
+        if String::from_utf8_lossy(&output).contains("bridge hello") {
+            break;
+        }
+    }
+
+    let text = String::from_utf8_lossy(&output);
+    assert!(text.contains("[ATM from arch-term]"), "{text}");
+    assert!(text.contains("bridge hello"), "{text}");
     Ok(())
 }

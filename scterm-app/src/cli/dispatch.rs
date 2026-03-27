@@ -29,8 +29,10 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use crate::{
-    attached_state, log_path_for_session, AttachSession, MasterConfig, MasterSession,
-    NoopOutputObserver, PersistentLog, SessionLauncher,
+    atm::{drain_atm_bridge, start_atm_bridge},
+    attached_state, log_path_for_session,
+    storage::clear_request_path_for,
+    AttachSession, MasterConfig, MasterSession, NoopOutputObserver, PersistentLog, SessionLauncher,
 };
 
 /// Parses and executes the `scterm` CLI, returning the process exit code.
@@ -123,15 +125,22 @@ fn execute(program: &str, action: Action) -> Result<(), CliError> {
         Action::InternalMaster {
             session_path,
             log_cap_bytes,
+            atm_enabled,
             child_command,
-        } => internal_master_main(program, &session_path, log_cap_bytes, &child_command)
-            .map_err(runtime_error),
+        } => internal_master_main(
+            program,
+            &session_path,
+            log_cap_bytes,
+            atm_enabled,
+            &child_command,
+        )
+        .map_err(runtime_error),
     }
 }
 
 fn print_help(program: &str) {
     println!(
-        "Usage:\n  {program} [<session> [command...]]\n  {program} <command> [options] ...\n\nCommands:\n  attach <session>\n  new <session> [command...]\n  start <session> [command...]\n  run <session> [command...]\n  push <session>\n  kill [-f|--force] <session>\n  clear [<session>]\n  list\n  current"
+        "Usage:\n  {program} [<session> [command...]]\n  {program} <command> [options] ...\n\nOptions:\n  --atm                Enable ATM inbound message injection for new sessions\n\nCommands:\n  attach <session>\n  new <session> [command...]\n  start <session> [command...]\n  run <session> [command...]\n  push <session>\n  kill [-f|--force] <session>\n  clear [<session>]\n  list\n  current"
     );
 }
 
@@ -216,13 +225,18 @@ fn clear_session(program: &str, session: Option<String>, quiet: bool) -> Result<
     };
     let log_path = log_path_for_session(&path);
     let cleared = if matches!(session_state(&path)?, SessionState::Live) {
-        let transport = UnixSocketTransport;
-        let mut stream = transport.connect(&path).map_err(unix_error)?;
-        stream
-            .write_all(&Packet::Clear.encode())
-            .and_then(|()| stream.flush())
-            .map_err(unix_error)?;
-        true
+        let request_path = clear_request_path_for(&path);
+        fs::write(&request_path, []).map_err(|error| {
+            CliError::new(EXIT_GENERAL, format!("{}: {error}", request_path.display()))
+        })?;
+        let deadline = Instant::now() + START_TIMEOUT;
+        while Instant::now() < deadline {
+            if !request_path.exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        !request_path.exists()
     } else {
         match fs::OpenOptions::new()
             .write(true)
@@ -274,10 +288,9 @@ fn kill_session(program: &str, session: &str, force: bool) -> Result<(), CliErro
     } else {
         Signal::SIGTERM as i32
     };
-    let packet = Packet::Kill(KillRequest::new(
-        u8::try_from(signal).expect("signal number fits in u8"),
-    ))
-    .encode();
+    let signal = u8::try_from(signal)
+        .map_err(|_| CliError::new(EXIT_GENERAL, "signal number does not fit in protocol byte"))?;
+    let packet = Packet::Kill(KillRequest::new(signal)).encode();
     let mut stream = transport.connect(&path).map_err(unix_error)?;
     stream.write_all(&packet).map_err(unix_error)?;
     stream.flush().map_err(unix_error)?;
@@ -289,7 +302,12 @@ fn kill_session(program: &str, session: &str, force: bool) -> Result<(), CliErro
             std::time::Duration::from_secs(7)
         };
     while Instant::now() < deadline {
-        if !path.as_path().exists() {
+        if !path.as_path().exists()
+            || matches!(
+                session_state(&path),
+                Ok(SessionState::Absent | SessionState::Stale)
+            )
+        {
             if force {
                 println!("{program}: session '{}' killed", session_label(&path));
             } else {
@@ -335,6 +353,7 @@ fn start_session(program: &str, spec: &SessionCommand, foreground: bool) -> Resu
             program,
             &path.to_string(),
             spec.options.log_cap.bytes(),
+            spec.options.atm,
             &spec.child_command,
         )
         .map_err(runtime_error)
@@ -357,6 +376,7 @@ fn spawn_internal_master(path: &SessionPath, spec: &SessionCommand) -> Result<()
         .arg("__internal-master")
         .arg(path.to_string())
         .arg(spec.options.log_cap.bytes().to_string())
+        .arg(spec.options.atm.to_string())
         .arg("--");
     for arg in &spec.child_command {
         command.arg(arg);
@@ -431,7 +451,7 @@ fn attach_to_session(
         .map_err(|error| CliError::new(EXIT_GENERAL, error.to_string()))?;
 
     let connecting = attach.finish_log_replay(log_replaying);
-    let (ring_replaying, mut stream) = attach.connect(connecting, false).map_err(runtime_error)?;
+    let (ring_replaying, mut stream) = attach.connect(connecting, true).map_err(runtime_error)?;
     let stdin = io::stdin();
     let size = current_window_size(&stdin);
     attach
@@ -545,6 +565,7 @@ fn internal_master_main(
     program: &str,
     session_path: &str,
     log_cap_bytes: u64,
+    atm_enabled: bool,
     child_command: &[String],
 ) -> Result<()> {
     let path = SessionPath::new(session_path).context("validate internal session path")?;
@@ -554,6 +575,7 @@ fn internal_master_main(
         LogCap::from_bytes(log_cap_bytes),
         app_log_root_for(&path),
     );
+    let app_log_root = config.app_log_root().to_path_buf();
     let launcher = SessionLauncher::new(config);
     let started = launcher.start(
         Session::new_resolved(path),
@@ -562,15 +584,25 @@ fn internal_master_main(
         NoopOutputObserver,
     )?;
     let mut master = started.into_master();
-    drive_master(&mut master)
+    let atm_bridge = start_atm_bridge(master.path(), &app_log_root, atm_enabled)?;
+    drive_master(&mut master, atm_bridge.as_ref())
 }
 
-fn drive_master(master: &mut MasterSession) -> Result<()> {
+fn drive_master(
+    master: &mut MasterSession,
+    atm_bridge: Option<&crate::atm::AtmBridge>,
+) -> Result<()> {
     let mut next_client_id = 1_u64;
     let mut read_clients = Vec::<ReadClient>::new();
     let mut pty_buffer = [0_u8; 4096];
 
     loop {
+        if let Some(bridge) = atm_bridge {
+            drain_atm_bridge(master, bridge);
+        }
+
+        process_clear_request(master)?;
+
         if master.child_exited()? {
             master.handle_child_exit()?;
             return Ok(());
@@ -610,22 +642,14 @@ fn drive_master(master: &mut MasterSession) -> Result<()> {
             .collect::<Vec<_>>();
         drop(poll_fds);
 
-        if listener_ready {
-            let stream = master.accept_client()?;
-            read_clients.push(ReadClient {
-                id: next_client_id,
-                stream,
-                attached: false,
-            });
-            next_client_id += 1;
-        }
+        accept_ready_client(
+            master,
+            &mut read_clients,
+            &mut next_client_id,
+            listener_ready,
+        )?;
 
-        if pty_ready {
-            let read = master.read_pty(&mut pty_buffer)?;
-            if read > 0 {
-                let _ = master.record_pty_output(&pty_buffer[..read]);
-            }
-        }
+        record_ready_pty_output(master, pty_ready, &mut pty_buffer)?;
 
         let mut removals = Vec::new();
         for (client_id, ready, hung_up) in client_events {
@@ -673,6 +697,47 @@ fn drive_master(master: &mut MasterSession) -> Result<()> {
     }
 }
 
+fn process_clear_request(master: &mut MasterSession) -> Result<()> {
+    let clear_request = clear_request_path_for(master.path());
+    if clear_request.exists() {
+        master.clear_history()?;
+        let _ = fs::remove_file(&clear_request);
+    }
+    Ok(())
+}
+
+fn accept_ready_client(
+    master: &MasterSession,
+    read_clients: &mut Vec<ReadClient>,
+    next_client_id: &mut u64,
+    listener_ready: bool,
+) -> Result<()> {
+    if listener_ready {
+        let stream = master.accept_client()?;
+        read_clients.push(ReadClient {
+            id: *next_client_id,
+            stream,
+            attached: false,
+        });
+        *next_client_id += 1;
+    }
+    Ok(())
+}
+
+fn record_ready_pty_output(
+    master: &mut MasterSession,
+    pty_ready: bool,
+    pty_buffer: &mut [u8; 4096],
+) -> Result<()> {
+    if pty_ready {
+        let read = master.read_pty(pty_buffer)?;
+        if read > 0 {
+            master.record_pty_output(&pty_buffer[..read])?;
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 struct ReadClient {
     id: u64,
@@ -717,7 +782,6 @@ fn handle_client_packet(
                 master.signal_child_group(signal)?;
             }
         }
-        Packet::Clear => master.clear_history()?,
     }
     Ok(())
 }
