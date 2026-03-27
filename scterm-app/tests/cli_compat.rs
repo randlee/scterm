@@ -552,6 +552,14 @@ fn clear_clears_live_log_and_ring_history() -> Result<()> {
 
     let cleared = env.run(&["clear", "clear-live"])?;
     assert!(cleared.status.success(), "{}", output_text(&cleared));
+    wait_for(
+        || {
+            fs::read_to_string(env.session_log("clear-live"))
+                .map_or(true, |text| !text.contains("before-clear"))
+        },
+        Duration::from_secs(5),
+        "clear-live log to drop marker after clear",
+    )?;
 
     let mut attach = env.spawn_pty(&["attach", "clear-live"])?;
     let output = attach.read_for(Duration::from_millis(400))?;
