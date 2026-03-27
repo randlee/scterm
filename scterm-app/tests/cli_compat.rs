@@ -5,6 +5,7 @@ use std::io::{self, Read, Write};
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
+use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -20,6 +21,14 @@ use tempfile::TempDir;
 const DETACH_CHAR: u8 = 0x1c;
 const SUSPEND_CHAR: u8 = 0x1a;
 const LINE_ECHO_SCRIPT: &str = "while IFS= read -r line; do printf '%s\\n' \"$line\"; done";
+static CLI_COMPAT_SERIAL: Mutex<()> = Mutex::new(());
+
+fn serialize_cli_compat_tests() -> MutexGuard<'static, ()> {
+    match CLI_COMPAT_SERIAL.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
 
 struct TestEnv {
     tempdir: TempDir,
@@ -401,6 +410,7 @@ fn terminate_session(env: &TestEnv, session: &str) -> Result<()> {
 
 #[test]
 fn non_tty_attach_new_and_open_fail_clearly() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
 
     for args in [
@@ -419,6 +429,7 @@ fn non_tty_attach_new_and_open_fail_clearly() -> Result<()> {
 
 #[test]
 fn default_open_creates_then_attaches_existing_session() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     if skip_if_pty_unavailable("default_open_creates_then_attaches_existing_session")? {
         return Ok(());
     }
@@ -450,6 +461,7 @@ fn default_open_creates_then_attaches_existing_session() -> Result<()> {
 
 #[test]
 fn strict_attach_failure_with_tty_reports_missing_session() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     if skip_if_pty_unavailable("strict_attach_failure_with_tty_reports_missing_session")? {
         return Ok(());
     }
@@ -466,6 +478,7 @@ fn strict_attach_failure_with_tty_reports_missing_session() -> Result<()> {
 
 #[test]
 fn start_run_and_new_each_create_a_session() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
     let _session_guard = SessionGuard::new(&env, ["s-start", "s-run", "s-new"]);
 
@@ -508,6 +521,7 @@ fn start_run_and_new_each_create_a_session() -> Result<()> {
 
 #[test]
 fn push_writes_to_the_session_log() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
 
     let start = env.run(&["start", "push-log", "/bin/sh", "-c", LINE_ECHO_SCRIPT])?;
@@ -538,6 +552,7 @@ fn push_writes_to_the_session_log() -> Result<()> {
 
 #[test]
 fn disabled_log_cap_skips_log_creation() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
 
     let start = env.run(&["start", "-C", "0", "nolog", "/bin/sh", "-c", "sleep 30"])?;
@@ -555,6 +570,7 @@ fn disabled_log_cap_skips_log_creation() -> Result<()> {
 
 #[test]
 fn clear_clears_live_log_and_ring_history() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     if skip_if_pty_unavailable("clear_clears_live_log_and_ring_history")? {
         return Ok(());
     }
@@ -598,6 +614,7 @@ fn clear_clears_live_log_and_ring_history() -> Result<()> {
 
 #[test]
 fn clear_clears_offline_log_history() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
 
     let start = env.run(&["start", "clear-offline", "/bin/sh", "-c", LINE_ECHO_SCRIPT])?;
@@ -633,6 +650,7 @@ fn clear_clears_offline_log_history() -> Result<()> {
 
 #[test]
 fn list_marks_attached_and_unattached_sessions() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     if skip_if_pty_unavailable("list_marks_attached_and_unattached_sessions")? {
         return Ok(());
     }
@@ -664,6 +682,7 @@ fn list_marks_attached_and_unattached_sessions() -> Result<()> {
 
 #[test]
 fn stale_session_is_reported_and_can_be_recreated() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     if skip_if_pty_unavailable("stale_session_is_reported_and_can_be_recreated")? {
         return Ok(());
     }
@@ -708,6 +727,7 @@ fn stale_session_is_reported_and_can_be_recreated() -> Result<()> {
 
 #[test]
 fn self_attach_prevention_uses_the_session_ancestry_env_var() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
     let session_path = env.session_socket("loop");
     fs::create_dir_all(session_path.parent().context("session parent")?)?;
@@ -727,6 +747,7 @@ fn self_attach_prevention_uses_the_session_ancestry_env_var() -> Result<()> {
 
 #[test]
 fn current_subcommand_prints_the_innermost_session_name() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
     let session_path = env.session_socket("current-demo");
     fs::create_dir_all(session_path.parent().context("session parent")?)?;
@@ -745,6 +766,7 @@ fn current_subcommand_prints_the_innermost_session_name() -> Result<()> {
 
 #[test]
 fn legacy_modes_execute_the_compat_surface() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     if skip_if_pty_unavailable("legacy_modes_execute_the_compat_surface")? {
         return Ok(());
     }
@@ -825,6 +847,7 @@ fn legacy_modes_execute_the_compat_surface() -> Result<()> {
 
 #[test]
 fn sigwinch_is_forwarded_from_the_attach_client_to_the_child_process() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     if skip_if_pty_unavailable("sigwinch_is_forwarded_from_the_attach_client_to_the_child_process")?
     {
         return Ok(());
@@ -861,6 +884,7 @@ fn sigwinch_is_forwarded_from_the_attach_client_to_the_child_process() -> Result
 
 #[test]
 fn kill_session_grace_reports_stopped() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
 
     let start = env.run(&["start", "kill-grace", "sleep", "999"])?;
@@ -876,6 +900,7 @@ fn kill_session_grace_reports_stopped() -> Result<()> {
 
 #[test]
 fn kill_session_force_reports_killed() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
 
     let start = env.run(&["start", "kill-force", "sleep", "999"])?;
@@ -891,6 +916,7 @@ fn kill_session_force_reports_killed() -> Result<()> {
 
 #[test]
 fn child_process_receives_scterm_session_env_var() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
     let output_path = env.temp_path("session-env.txt");
     let command = format!(
@@ -911,6 +937,7 @@ fn child_process_receives_scterm_session_env_var() -> Result<()> {
 
 #[test]
 fn detach_and_suspend_leave_the_session_running() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     if skip_if_pty_unavailable("detach_and_suspend_leave_the_session_running")? {
         return Ok(());
     }
@@ -964,6 +991,7 @@ fn detach_and_suspend_leave_the_session_running() -> Result<()> {
 
 #[test]
 fn multi_client_attach_receives_the_same_output() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     if skip_if_pty_unavailable("multi_client_attach_receives_the_same_output")? {
         return Ok(());
     }
@@ -994,6 +1022,7 @@ fn multi_client_attach_receives_the_same_output() -> Result<()> {
 
 #[test]
 fn kill_disconnects_multiple_attached_clients() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     if skip_if_pty_unavailable("kill_disconnects_multiple_attached_clients")? {
         return Ok(());
     }
@@ -1006,6 +1035,9 @@ fn kill_disconnects_multiple_attached_clients() -> Result<()> {
     let mut first = env.spawn_pty(&["attach", "multi-kill"])?;
     let mut second = env.spawn_pty(&["attach", "multi-kill"])?;
     wait_for_attached(&env, "multi-kill")?;
+    first.send(b"\n")?;
+    first.read_until("\n", Duration::from_secs(5))?;
+    second.read_until("\n", Duration::from_secs(5))?;
     first.send(b"before-kill\n")?;
     first.read_until("before-kill", Duration::from_secs(10))?;
     second.read_until("before-kill", Duration::from_secs(10))?;
@@ -1024,6 +1056,7 @@ fn kill_disconnects_multiple_attached_clients() -> Result<()> {
 
 #[test]
 fn bad_exec_path_fails_startup_readiness() -> Result<()> {
+    let _serial = serialize_cli_compat_tests();
     let env = TestEnv::new()?;
     let start = env.run(&["start", "badexec", "__scterm_no_such_command__"])?;
     assert!(!start.status.success());
