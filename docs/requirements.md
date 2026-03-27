@@ -216,9 +216,8 @@ Option handling requirements:
 ### Structured Logging
 
 - Structured logging shall use a self-contained `AppLogger` in `scterm-app`
-  implemented with `serde_json` and `std::io`.
-- No external observability crate dependency is required or permitted in this
-  repo.
+  implemented with `serde_json` and `std::io`. No external observability crate
+  dependency is required or permitted in this repo.
 - Structured logging shall be an application-layer concern owned by
   `scterm-app` and the final binary wiring.
 - `scterm-core` shall not depend on any observability crate.

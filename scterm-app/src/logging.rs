@@ -15,7 +15,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// A minimal structured logger owned by `scterm-app`.
 ///
 /// The implementation keeps the logging boundary local to the application
-/// layer while using `serde_json` and `std::io` directly.
+/// layer using `serde_json` and `std::io` directly — no external observability
+/// crate dependency.
 pub struct AppLogger {
     path: PathBuf,
     file: Mutex<File>,

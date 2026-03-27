@@ -1,8 +1,5 @@
 //! Integration tests for `scterm-app` session orchestration.
 
-use std::os::fd::OwnedFd;
-use std::time::{Duration, Instant};
-
 use anyhow::Result;
 use nix::poll::{poll, PollFd, PollFlags};
 use nix::pty::openpty;
@@ -12,6 +9,8 @@ use scterm_app::{
 };
 use scterm_core::{AttachRequest, LogCap, RingSize, Session, SessionPath, WindowSize};
 use scterm_unix::{PtyCommand, SocketTransport};
+use std::os::fd::OwnedFd;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 #[test]

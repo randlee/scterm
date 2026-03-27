@@ -396,7 +396,14 @@ fn wait_for_startup(path: &SessionPath) -> Result<(), CliError> {
     let deadline = Instant::now() + START_TIMEOUT;
     while Instant::now() < deadline {
         match transport.connect(path) {
-            Ok(_) => return Ok(()),
+            Ok(_) => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                match transport.connect(path) {
+                    Ok(_) => return Ok(()),
+                    Err(error) if error.is_absent_session() || error.is_stale_socket() => {}
+                    Err(error) => return Err(unix_error(error)),
+                }
+            }
             Err(error) if error.is_absent_session() || error.is_stale_socket() => {
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }

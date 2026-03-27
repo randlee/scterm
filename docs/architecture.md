@@ -221,11 +221,8 @@ Application error policy:
 
 Structured logging policy:
 
-- use a self-contained `AppLogger` implemented in `scterm-app` with
-  `serde_json` and `std::io`
-- do not add any external observability crate dependency in this repo
-- keep logger lifecycle and sink configuration in `scterm-app` or the binary,
-  not in lower crates
+- use the self-contained `AppLogger` in `scterm-app` (serde_json + std::io) — no external observability crate dependency
+- keep logger lifecycle and sink configuration in `scterm-app` or the binary, not in lower crates
 
 ### Crate 4: `scterm-atm` (Phase 2)
 
