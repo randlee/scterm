@@ -12,7 +12,7 @@ use std::os::unix::fs::FileTypeExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
-use scterm_core::SessionPath;
+use scterm_core::{cwd_sensitive_filesystem_lock, SessionPath};
 
 use crate::sealed::Sealed;
 use crate::{SocketTransport, UnixError};
@@ -222,6 +222,10 @@ fn with_socket_path<T>(
         return operation(path);
     }
 
+    let _lock = cwd_sensitive_filesystem_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
     let parent = path.parent().ok_or_else(|| {
         UnixError::invalid_session(
             path.to_path_buf(),
@@ -259,10 +263,18 @@ fn with_socket_path<T>(
 
     match (result, restore) {
         (Ok(value), Ok(())) => Ok(value),
-        (Err(error), Ok(())) | (_, Err(error)) => Err(error),
+        (Err(error), _) | (Ok(_), Err(error)) => Err(error),
     }
 }
 
 const fn sun_path_limit() -> usize {
-    107
+    #[cfg(target_os = "macos")]
+    {
+        103
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        107
+    }
 }

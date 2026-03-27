@@ -1,17 +1,35 @@
 //! Integration tests for `scterm-app` session orchestration.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use nix::poll::{poll, PollFd, PollFlags};
 use nix::pty::openpty;
 use scterm_app::{
-    log_path_for_session, AppLogger, AttachSession, MasterConfig, NoopOutputObserver,
-    PersistentLog, SessionLauncher,
+    log_path_for_session, AttachSession, MasterConfig, NoopOutputObserver, PersistentLog,
+    SessionLauncher,
 };
 use scterm_core::{AttachRequest, LogCap, RingSize, Session, SessionPath, WindowSize};
 use scterm_unix::{PtyCommand, SocketTransport};
-use std::os::fd::OwnedFd;
+use std::os::fd::{BorrowedFd, OwnedFd};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
+
+const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+const TEST_TIMEOUT_MS: u16 = 5_000;
+
+fn wait_for_readable(fd: BorrowedFd<'_>, label: &str) -> Result<()> {
+    let mut poll_fds = [PollFd::new(fd, PollFlags::POLLIN)];
+    if poll(&mut poll_fds, TEST_TIMEOUT_MS)? == 0 {
+        return Err(anyhow!("timed out waiting for {label}"));
+    }
+    Ok(())
+}
+
+fn recv_with_timeout<T>(receiver: &mpsc::Receiver<Result<T>>, label: &str) -> Result<T> {
+    receiver
+        .recv_timeout(TEST_TIMEOUT)
+        .map_err(|_| anyhow!("timed out waiting for {label}"))?
+}
 
 #[test]
 fn persistent_log_caps_to_the_latest_bytes() -> Result<()> {
@@ -70,13 +88,19 @@ fn master_toggles_attached_state_and_replays_the_ring() -> Result<()> {
     let mut master = started.into_master();
     master.record_pty_output(b"history")?;
 
-    let client = std::thread::spawn(move || {
+    let (client_tx, client_rx) = mpsc::channel();
+    std::thread::spawn(move || {
         let transport = scterm_unix::UnixSocketTransport;
-        transport.connect(&path).expect("connect session client")
+        let result = transport
+            .connect(&path)
+            .map(|_| ())
+            .map_err(anyhow::Error::from);
+        let _ = client_tx.send(result);
     });
+    wait_for_readable(master.listener_fd(), "session client accept")?;
     let stream = master.accept_client()?;
     let ring = master.attach_client(stream, AttachRequest::new(false))?;
-    let _client = client.join().expect("join client");
+    recv_with_timeout(&client_rx, "session client connect")?;
 
     assert_eq!(ring, b"history");
     assert!(master.attached_state()?);
@@ -100,15 +124,21 @@ fn attach_session_replays_log_before_connecting_and_sends_attach_packets() -> Re
     assert_eq!(history, b"log-history");
     let connecting = attach.finish_log_replay(log_replaying);
 
-    let server = std::thread::spawn(move || -> Result<[u8; scterm_core::PACKET_SIZE]> {
-        let mut stream = listener.accept()?;
-        let mut bytes = [0_u8; scterm_core::PACKET_SIZE];
-        let _ = stream.read(&mut bytes)?;
-        Ok(bytes)
+    let (server_tx, server_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = (|| -> Result<[u8; scterm_core::PACKET_SIZE]> {
+            wait_for_readable(listener.as_fd(), "attach server accept")?;
+            let mut stream = listener.accept()?;
+            wait_for_readable(stream.as_fd(), "attach packet read")?;
+            let mut bytes = [0_u8; scterm_core::PACKET_SIZE];
+            stream.read_exact(&mut bytes)?;
+            Ok(bytes)
+        })();
+        let _ = server_tx.send(result);
     });
 
     let (_ring, _stream) = attach.connect(connecting, false)?;
-    let packet = server.join().expect("join attach server")?;
+    let packet = recv_with_timeout(&server_rx, "attach server packet")?;
 
     assert_eq!(packet[0], 1);
     Ok(())
@@ -122,13 +152,20 @@ fn live_attachment_uses_raw_mode_and_detaches_cleanly() -> Result<()> {
     let listener = transport.bind(&path)?;
     let attach = AttachSession::new(path.clone());
 
-    let server = std::thread::spawn(move || -> Result<[u8; scterm_core::PACKET_SIZE]> {
-        let mut stream = listener.accept()?;
-        let mut attach_packet = [0_u8; scterm_core::PACKET_SIZE];
-        let _ = stream.read(&mut attach_packet)?;
-        let mut detach_packet = [0_u8; scterm_core::PACKET_SIZE];
-        let _ = stream.read(&mut detach_packet)?;
-        Ok(detach_packet)
+    let (server_tx, server_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = (|| -> Result<[u8; scterm_core::PACKET_SIZE]> {
+            wait_for_readable(listener.as_fd(), "detach server accept")?;
+            let mut stream = listener.accept()?;
+            let mut attach_packet = [0_u8; scterm_core::PACKET_SIZE];
+            wait_for_readable(stream.as_fd(), "detach attach packet read")?;
+            stream.read_exact(&mut attach_packet)?;
+            let mut detach_packet = [0_u8; scterm_core::PACKET_SIZE];
+            wait_for_readable(stream.as_fd(), "detach packet read")?;
+            stream.read_exact(&mut detach_packet)?;
+            Ok(detach_packet)
+        })();
+        let _ = server_tx.send(result);
     });
 
     let pty = openpty(None, None)?;
@@ -141,20 +178,7 @@ fn live_attachment_uses_raw_mode_and_detaches_cleanly() -> Result<()> {
     let detached = live.detach()?;
 
     assert_eq!(detached.path(), &path);
-    assert_eq!(server.join().expect("join detach server")?[0], 2);
-    Ok(())
-}
-
-#[test]
-fn app_logger_writes_jsonl_events() -> Result<()> {
-    let tempdir = TempDir::new()?;
-    let logger = AppLogger::new(tempdir.path())?;
-
-    logger.emit("master", "start", "session starting")?;
-
-    let contents = std::fs::read_to_string(logger.path())?;
-    assert!(contents.contains("\"target\":\"master\""));
-    assert!(contents.contains("\"action\":\"start\""));
+    assert_eq!(recv_with_timeout(&server_rx, "detach server packet")?[0], 2);
     Ok(())
 }
 
@@ -202,13 +226,19 @@ fn attach_request_can_skip_ring_replay_after_log_history_is_covered() -> Result<
     let mut master = started.into_master();
     master.record_pty_output(b"covered-history")?;
 
-    let client = std::thread::spawn(move || {
+    let (client_tx, client_rx) = mpsc::channel();
+    std::thread::spawn(move || {
         let transport = scterm_unix::UnixSocketTransport;
-        transport.connect(&path).expect("connect session client")
+        let result = transport
+            .connect(&path)
+            .map(|_| ())
+            .map_err(anyhow::Error::from);
+        let _ = client_tx.send(result);
     });
+    wait_for_readable(master.listener_fd(), "skip-ring client accept")?;
     let stream = master.accept_client()?;
     let ring = master.attach_client(stream, AttachRequest::new(true))?;
-    let _client = client.join().expect("join client");
+    recv_with_timeout(&client_rx, "skip-ring client connect")?;
 
     assert!(ring.is_empty(), "ring replay should have been skipped");
     Ok(())

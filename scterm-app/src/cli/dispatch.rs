@@ -14,8 +14,8 @@ use nix::poll::{poll, PollFd, PollFlags};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::getpid;
 use scterm_core::{
-    session_env_var_name, AncestryChain, KillRequest, LogCap, Packet, PushData, RedrawMethod,
-    RingSize, Session, SessionPath,
+    session_env_var_name, AncestryChain, AttachClient, KillRequest, LogCap, LogReplaying, Packet,
+    PushData, RedrawMethod, RingSize, Session, SessionPath,
 };
 use scterm_unix::{
     PtyCommand, RawModeGuard, SignalEvent, SignalWatcher, SocketTransport, UnixSocketTransport,
@@ -420,6 +420,10 @@ fn wait_for_startup(path: &SessionPath) -> Result<(), CliError> {
     ))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "The attach compatibility path intentionally keeps the full atch-style control flow together."
+)]
 fn attach_to_session(
     program: &str,
     session: &str,
@@ -524,7 +528,17 @@ fn attach_to_session(
                     send_detach(&mut stream)?;
                     kill(getpid(), Signal::SIGSTOP)
                         .map_err(|error| CliError::new(EXIT_GENERAL, error.to_string()))?;
-                    return Ok(());
+                    let reconnecting =
+                        AttachClient::<LogReplaying>::new_log_replaying(attach.path().clone())
+                            .connect();
+                    let (ring_replaying, mut resumed_stream) =
+                        attach.connect(reconnecting, true).map_err(runtime_error)?;
+                    attach
+                        .request_redraw(&mut resumed_stream, current_window_size(&stdin))
+                        .map_err(runtime_error)?;
+                    let _live = ring_replaying.go_live();
+                    stream = resumed_stream;
+                    continue;
                 }
                 to_send.push(*byte);
             }

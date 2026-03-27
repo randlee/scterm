@@ -16,8 +16,6 @@ pub use attach::{AttachSession, LiveAttachment};
 #[doc(inline)]
 pub use cli::run_cli;
 #[doc(inline)]
-pub use logging::AppLogger;
-#[doc(inline)]
 pub use master::{
     BroadcastSummary, InputSource, MasterConfig, MasterSession, NoopOutputObserver, OutputObserver,
     SessionLauncher, StartedSession,

@@ -177,6 +177,28 @@ struct PtyChild {
     captured: Vec<u8>,
 }
 
+struct SessionGuard<'a> {
+    env: &'a TestEnv,
+    sessions: Vec<String>,
+}
+
+impl<'a> SessionGuard<'a> {
+    fn new(env: &'a TestEnv, sessions: impl IntoIterator<Item = &'a str>) -> Self {
+        Self {
+            env,
+            sessions: sessions.into_iter().map(ToOwned::to_owned).collect(),
+        }
+    }
+}
+
+impl Drop for SessionGuard<'_> {
+    fn drop(&mut self) {
+        for session in &self.sessions {
+            self.env.cleanup_session(session);
+        }
+    }
+}
+
 impl PtyChild {
     fn pid(&self) -> Pid {
         Pid::from_raw(i32::try_from(self.child.id()).expect("pid fits in i32"))
@@ -325,7 +347,7 @@ fn wait_for_attached(env: &TestEnv, session: &str) -> Result<()> {
                 })
                 .unwrap_or(false)
         },
-        Duration::from_secs(3),
+        Duration::from_secs(5),
         &format!("session {session} to become attached"),
     )
 }
@@ -423,6 +445,7 @@ fn strict_attach_failure_with_tty_reports_missing_session() -> Result<()> {
 #[test]
 fn start_run_and_new_each_create_a_session() -> Result<()> {
     let env = TestEnv::new()?;
+    let _session_guard = SessionGuard::new(&env, ["s-start", "s-run", "s-new"]);
 
     let start = env.run(&["start", "s-start", "sleep", "999"])?;
     assert!(start.status.success(), "{}", output_text(&start));
@@ -529,6 +552,14 @@ fn clear_clears_live_log_and_ring_history() -> Result<()> {
 
     let cleared = env.run(&["clear", "clear-live"])?;
     assert!(cleared.status.success(), "{}", output_text(&cleared));
+    wait_for(
+        || {
+            fs::read_to_string(env.session_log("clear-live"))
+                .map_or(true, |text| !text.contains("before-clear"))
+        },
+        Duration::from_secs(5),
+        "clear-live log to drop marker after clear",
+    )?;
 
     let mut attach = env.spawn_pty(&["attach", "clear-live"])?;
     let output = attach.read_for(Duration::from_millis(400))?;
@@ -685,6 +716,7 @@ fn legacy_modes_execute_the_compat_surface() -> Result<()> {
         return Ok(());
     }
     let env = TestEnv::new()?;
+    let _session_guard = SessionGuard::new(&env, ["legacy-start", "legacy-new", "legacy-run"]);
 
     let list = env.run(&["-l"])?;
     assert_eq!(list.status.code(), Some(0));
@@ -882,6 +914,10 @@ fn detach_and_suspend_leave_the_session_running() -> Result<()> {
         "client suspend stop",
     )?;
     kill(suspend_client.pid(), Signal::SIGCONT)?;
+    wait_for_attached(&env, "detachable")?;
+    suspend_client.send(b"resume-ok\n")?;
+    suspend_client.read_until("resume-ok", Duration::from_secs(5))?;
+    suspend_client.send(&[DETACH_CHAR])?;
     assert!(suspend_client
         .wait_with_output(Duration::from_secs(3))?
         .0
@@ -920,6 +956,36 @@ fn multi_client_attach_receives_the_same_output() -> Result<()> {
     assert!(second.wait_with_output(Duration::from_secs(3))?.0.success());
 
     env.cleanup_session("multi");
+    Ok(())
+}
+
+#[test]
+fn kill_disconnects_multiple_attached_clients() -> Result<()> {
+    if skip_if_pty_unavailable("kill_disconnects_multiple_attached_clients")? {
+        return Ok(());
+    }
+    let env = TestEnv::new()?;
+
+    let start = env.run(&["start", "multi-kill", "/bin/sh", "-c", LINE_ECHO_SCRIPT])?;
+    assert!(start.status.success(), "{}", output_text(&start));
+    env.wait_for_socket("multi-kill")?;
+
+    let mut first = env.spawn_pty(&["attach", "multi-kill"])?;
+    let mut second = env.spawn_pty(&["attach", "multi-kill"])?;
+    wait_for_attached(&env, "multi-kill")?;
+    first.send(b"before-kill\n")?;
+    first.read_until("before-kill", Duration::from_secs(10))?;
+    second.read_until("before-kill", Duration::from_secs(10))?;
+
+    let kill_output = env.run(&["kill", "multi-kill"])?;
+    assert!(
+        kill_output.status.success(),
+        "{}",
+        output_text(&kill_output)
+    );
+    assert!(first.wait_with_output(Duration::from_secs(3))?.0.success());
+    assert!(second.wait_with_output(Duration::from_secs(3))?.0.success());
+    env.wait_for_socket_removed("multi-kill")?;
     Ok(())
 }
 

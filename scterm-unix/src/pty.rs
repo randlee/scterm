@@ -153,6 +153,12 @@ impl PtyProcess {
         let mut written = 0_usize;
         while written < buffer.len() {
             let chunk = self.write(&buffer[written..])?;
+            if chunk == 0 {
+                return Err(UnixError::Pty {
+                    operation: "write_all",
+                    source: io::Error::from(io::ErrorKind::WriteZero),
+                });
+            }
             written += chunk;
         }
         Ok(())

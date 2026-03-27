@@ -8,7 +8,9 @@ use anyhow::{Context, Result};
 use serde_json::json;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -90,8 +92,29 @@ impl AppLogger {
     }
 
     /// Returns the JSONL log file path.
+    #[cfg(test)]
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppLogger;
+    use anyhow::Result;
+    use tempfile::TempDir;
+
+    #[test]
+    fn app_logger_writes_jsonl_events() -> Result<()> {
+        let tempdir = TempDir::new()?;
+        let logger = AppLogger::new(tempdir.path())?;
+
+        logger.emit("master", "start", "session starting")?;
+
+        let contents = std::fs::read_to_string(logger.path())?;
+        assert!(contents.contains("\"target\":\"master\""));
+        assert!(contents.contains("\"action\":\"start\""));
+        Ok(())
     }
 }
