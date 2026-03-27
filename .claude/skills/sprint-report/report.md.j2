@@ -1,0 +1,20 @@
+---
+name: sprint-report
+version: 1.0.0
+description: Phase status report for scterm.
+format: markdown
+required_variables:
+  - mode
+  - sprint_rows
+  - integration_row
+---
+{% if mode == "detailed" %}
+{{ sprint_rows }}
+────────────────────────────────────────
+{{ integration_row }}
+{% else %}
+| Phase | DEV | QA | CI | PR |
+|-------|-----|----|----|-----|
+{{ sprint_rows }}
+{{ integration_row }}
+{% endif %}
