@@ -44,7 +44,7 @@ pub struct LiveAttachment<Tty> {
     state: AttachClient<Live>,
     stream: UnixSocketStream,
     raw_mode: RawModeGuard,
-    tty: Tty,
+    _tty: Tty,
 }
 
 impl AttachSession {
@@ -55,6 +55,12 @@ impl AttachSession {
             path,
             transport: UnixSocketTransport,
         }
+    }
+
+    /// Returns the target session path.
+    #[must_use]
+    pub fn path(&self) -> &SessionPath {
+        &self.path
     }
 
     /// Replays the on-disk log before any socket connection occurs.
@@ -123,7 +129,7 @@ impl AttachSession {
             state: state.go_live(),
             stream,
             raw_mode,
-            tty,
+            _tty: tty,
         })
     }
 
@@ -147,7 +153,7 @@ impl AttachSession {
             state: state.go_live_skip_ring(),
             stream,
             raw_mode,
-            tty,
+            _tty: tty,
         })
     }
 }
@@ -186,7 +192,6 @@ where
         self.stream.flush().context("flush detach packet")?;
         let detached = self.state.detach();
         drop(self.raw_mode);
-        let _ = self.tty.as_fd();
         Ok(detached)
     }
 }

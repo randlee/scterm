@@ -27,7 +27,10 @@ pub(super) fn parse_cli(argv: &[String]) -> Result<Action, CliError> {
         return parse_legacy_mode(mode, &mut queue, global);
     }
 
-    let head = queue.front().cloned().expect("checked non-empty");
+    let head = queue
+        .front()
+        .cloned()
+        .ok_or_else(|| CliError::usage("No command was specified."))?;
     match head.as_str() {
         "__internal-master" => parse_internal_master(queue),
         "attach" | "a" => {

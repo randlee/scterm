@@ -6,7 +6,7 @@ use scterm_core::SessionPath;
 use std::path::Path;
 
 #[cfg(feature = "atm")]
-use crate::AppLogger;
+use crate::logging::AppLogger;
 #[cfg(feature = "atm")]
 use scterm_core::SessionName;
 #[cfg(feature = "atm")]

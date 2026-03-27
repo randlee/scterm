@@ -1,12 +1,16 @@
 //! Unix integration tests for `scterm-unix`.
 
+use std::error::Error;
 use std::fs;
+use std::os::fd::BorrowedFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::FileTypeExt;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use nix::poll::{poll, PollFd, PollFlags};
 use nix::pty::openpty;
 use nix::sys::signal::Signal;
 use nix::sys::termios::{self, LocalFlags};
@@ -16,80 +20,105 @@ use scterm_unix::{
 };
 use tempfile::TempDir;
 
-#[test]
-fn socket_transport_supports_bind_connect_accept_and_close() {
-    let tempdir = TempDir::new().expect("tempdir");
-    let path = SessionPath::new(tempdir.path().join("socket")).expect("session path");
-    let transport = UnixSocketTransport;
-    let listener = transport.bind(&path).expect("bind listener");
+const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+const TEST_TIMEOUT_MS: u16 = 5_000;
 
-    let client_thread = thread::spawn(move || {
-        let transport = UnixSocketTransport;
-        let mut stream = transport.connect(&path).expect("connect stream");
-        stream.write(b"ping").expect("write ping");
-    });
+type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
-    let mut server = listener.accept().expect("accept client");
-    let mut buffer = [0_u8; 4];
-    let read = server.read(&mut buffer).expect("read from client");
+fn wait_for_readable(fd: BorrowedFd<'_>, label: &str) -> TestResult<()> {
+    let mut poll_fds = [PollFd::new(fd, PollFlags::POLLIN)];
+    if poll(&mut poll_fds, TEST_TIMEOUT_MS)? == 0 {
+        return Err(Box::new(std::io::Error::other(format!(
+            "timed out waiting for {label}"
+        ))));
+    }
+    Ok(())
+}
 
-    client_thread.join().expect("join client");
-    assert_eq!(&buffer[..read], b"ping");
+fn recv_with_timeout<T>(receiver: &mpsc::Receiver<TestResult<T>>, label: &str) -> TestResult<T> {
+    receiver
+        .recv_timeout(TEST_TIMEOUT)
+        .map_err(|_| std::io::Error::other(format!("timed out waiting for {label}")))?
 }
 
 #[test]
-fn socket_transport_uses_chdir_indirection_for_long_paths() {
-    let tempdir = TempDir::new().expect("tempdir");
+fn socket_transport_supports_bind_connect_accept_and_close() -> TestResult<()> {
+    let tempdir = TempDir::new()?;
+    let path = SessionPath::new(tempdir.path().join("socket"))?;
+    let transport = UnixSocketTransport;
+    let listener = transport.bind(&path)?;
+
+    let (client_tx, client_rx) = mpsc::channel();
+    thread::spawn(move || {
+        let transport = UnixSocketTransport;
+        let result = (|| -> TestResult<()> {
+            let mut stream = transport.connect(&path)?;
+            stream.write(b"ping")?;
+            Ok(())
+        })();
+        let _ = client_tx.send(result);
+    });
+
+    wait_for_readable(listener.as_fd(), "socket accept")?;
+    let mut server = listener.accept()?;
+    let mut buffer = [0_u8; 4];
+    wait_for_readable(server.as_fd(), "socket read")?;
+    let read = server.read(&mut buffer)?;
+
+    recv_with_timeout(&client_rx, "client thread")?;
+    assert_eq!(&buffer[..read], b"ping");
+    Ok(())
+}
+
+#[test]
+fn socket_transport_uses_chdir_indirection_for_long_paths() -> TestResult<()> {
+    let tempdir = TempDir::new()?;
     let prefix_len = tempdir.path().as_os_str().as_bytes().len();
     let padding = "x".repeat(108usize.saturating_sub(prefix_len) + 10);
     let long_dir = tempdir.path().join(padding);
-    fs::create_dir_all(&long_dir).expect("create long directory");
+    fs::create_dir_all(&long_dir)?;
 
     let full_path = long_dir.join("s.sock");
     assert!(full_path.as_os_str().as_bytes().len() > 107);
 
-    let session_path = SessionPath::new(full_path.clone()).expect("session path");
+    let session_path = SessionPath::new(full_path.clone())?;
     let transport = UnixSocketTransport;
-    let listener = transport.bind(&session_path).expect("bind listener");
+    let listener = transport.bind(&session_path)?;
 
-    let client_thread = thread::spawn(move || {
+    let (client_tx, client_rx) = mpsc::channel();
+    thread::spawn(move || {
         let transport = UnixSocketTransport;
-        transport.connect(&session_path).expect("connect long path")
+        let result = transport
+            .connect(&session_path)
+            .map(|_| ())
+            .map_err(Into::into);
+        let _ = client_tx.send(result);
     });
 
-    let _server = listener.accept().expect("accept long-path client");
-    let _client = client_thread.join().expect("join client");
-    assert!(fs::metadata(full_path)
-        .expect("socket metadata")
-        .file_type()
-        .is_socket());
+    wait_for_readable(listener.as_fd(), "long-path accept")?;
+    let _server = listener.accept()?;
+    recv_with_timeout(&client_rx, "long-path client")?;
+    assert!(fs::metadata(full_path)?.file_type().is_socket());
+    Ok(())
 }
 
 #[test]
-fn pty_backend_spawns_and_echoes_through_the_master() {
+fn pty_backend_spawns_and_echoes_through_the_master() -> TestResult<()> {
     let backend = UnixPtyBackend;
-    let command = PtyCommand::new("/bin/sh")
-        .expect("command")
-        .arg("-c")
-        .expect("arg")
-        .arg("cat")
-        .expect("arg");
-    let process = backend
-        .spawn(&command, Some(WindowSize::new(24, 80, 0, 0)))
-        .expect("spawn pty process");
+    let command = PtyCommand::new("/bin/sh")?.arg("-c")?.arg("cat")?;
+    let process = backend.spawn(&command, Some(WindowSize::new(24, 80, 0, 0)))?;
 
-    process.write(b"hello from pty\n").expect("write to pty");
-    thread::sleep(Duration::from_millis(50));
+    process.write(b"hello from pty\n")?;
+    wait_for_readable(process.as_fd(), "PTY output")?;
 
     let mut buffer = [0_u8; 256];
-    let read = process.read(&mut buffer).expect("read from pty");
+    let read = process.read(&mut buffer)?;
     let output = String::from_utf8_lossy(&buffer[..read]);
 
     assert!(output.contains("hello from pty"));
-    process
-        .signal_group(Signal::SIGTERM)
-        .expect("terminate child");
+    process.signal_group(Signal::SIGTERM)?;
     let _ = process.wait();
+    Ok(())
 }
 
 #[test]

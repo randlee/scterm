@@ -308,6 +308,24 @@ where
         self.detach_client(index)
     }
 
+    fn remove_client_by_id(&mut self, client_id: u64) -> bool {
+        let Some(index) = self
+            .clients
+            .iter()
+            .position(|client| client.id == client_id)
+        else {
+            return false;
+        };
+        self.clients.remove(index);
+        true
+    }
+
+    fn finalize_client_removals(&self) {
+        if self.clients.is_empty() {
+            let _ = set_attached_state(self.path.as_path(), false);
+        }
+    }
+
     /// Enqueues user input for serialized PTY delivery.
     pub fn enqueue_user_input(&mut self, bytes: impl Into<Vec<u8>>) {
         self.enqueue(InputSource::User, bytes);
@@ -374,8 +392,14 @@ where
         }
 
         for client_id in failed_client_ids {
-            self.detach_client_by_id(client_id)?;
+            let removed = self.remove_client_by_id(client_id);
+            if removed {
+                let _ = self
+                    .logger
+                    .emit("master", "detach", "client detached after write failure");
+            }
         }
+        self.finalize_client_removals();
 
         Ok(BroadcastSummary {
             delivered_clients: self.clients.len(),
@@ -387,6 +411,8 @@ where
     /// # Errors
     /// Returns an error when the end marker or socket cleanup fails.
     pub fn handle_child_exit(&mut self) -> Result<()> {
+        self.clients.clear();
+        self.finalize_client_removals();
         self.log.append_end_marker()?;
         let _ = fs::remove_file(self.path.as_path());
         self.logger.emit("master", "exit", "session child exited")?;

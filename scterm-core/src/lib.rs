@@ -6,6 +6,7 @@
 mod ancestry;
 mod error;
 mod packet;
+mod process_lock;
 mod ring;
 mod state;
 mod types;
@@ -19,6 +20,8 @@ pub use packet::{
     AttachRequest, ClearMethod, KillRequest, Packet, PushData, RedrawMethod, RedrawRequest,
     WindowSize, PACKET_SIZE, WINDOW_SIZE_BYTES,
 };
+#[doc(hidden)]
+pub use process_lock::cwd_sensitive_filesystem_lock;
 #[doc(inline)]
 pub use ring::RingBuffer;
 #[doc(inline)]
