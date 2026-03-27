@@ -5,6 +5,7 @@
 
 mod error;
 mod process;
+pub(crate) mod process_lock;
 mod pty;
 mod raw_mode;
 mod signal;

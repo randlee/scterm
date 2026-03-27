@@ -284,6 +284,11 @@ fn master_serializes_inbound_messages_through_the_pty_queue() -> Result<()> {
     }
 
     let text = String::from_utf8_lossy(&output);
+    if !text.contains("bridge hello") {
+        return Err(anyhow!(
+            "timed out waiting for queued PTY output; captured so far: {text}"
+        ));
+    }
     assert!(text.contains("[ATM from arch-term]"), "{text}");
     assert!(text.contains("bridge hello"), "{text}");
     Ok(())
