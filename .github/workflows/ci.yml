@@ -13,6 +13,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout sc-observability sibling
+        run: |
+          if [ -f Cargo.toml ]; then
+            git clone https://github.com/randlee/sc-observability.git \
+              "$GITHUB_WORKSPACE/../../sc-observability"
+          fi
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -32,6 +39,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Checkout sc-observability sibling
+        run: |
+          if [ -f Cargo.toml ]; then
+            git clone https://github.com/randlee/sc-observability.git \
+              "$GITHUB_WORKSPACE/../../sc-observability"
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -97,6 +111,13 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Checkout sc-observability sibling
+        run: |
+          if [ -f Cargo.toml ]; then
+            git clone https://github.com/randlee/sc-observability.git \
+              "$GITHUB_WORKSPACE/../../sc-observability"
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
