@@ -6,7 +6,7 @@
 
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -85,6 +85,12 @@ impl UnixSocketListener {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    /// Returns the underlying file descriptor as a borrowed handle.
+    #[must_use]
+    pub fn as_fd(&self) -> BorrowedFd<'_> {
+        self.listener.as_fd()
+    }
 }
 
 /// A connected Unix-domain stream.
@@ -132,6 +138,55 @@ impl UnixSocketStream {
             path: PathBuf::from("<connected-stream>"),
             source,
         })
+    }
+
+    /// Reads exactly `buffer.len()` bytes from the stream.
+    ///
+    /// # Errors
+    /// Returns [`UnixError`] when the stream is closed early or the read fails.
+    pub fn read_exact(&mut self, buffer: &mut [u8]) -> Result<(), UnixError> {
+        self.stream
+            .read_exact(buffer)
+            .map_err(|source| UnixError::Socket {
+                operation: "read_exact",
+                path: PathBuf::from("<connected-stream>"),
+                source,
+            })
+    }
+
+    /// Writes all bytes from `buffer` to the stream.
+    ///
+    /// # Errors
+    /// Returns [`UnixError`] when writing fails.
+    pub fn write_all(&mut self, buffer: &[u8]) -> Result<(), UnixError> {
+        self.stream
+            .write_all(buffer)
+            .map_err(|source| UnixError::Socket {
+                operation: "write_all",
+                path: PathBuf::from("<connected-stream>"),
+                source,
+            })
+    }
+
+    /// Returns the underlying file descriptor as a borrowed handle.
+    #[must_use]
+    pub fn as_fd(&self) -> BorrowedFd<'_> {
+        self.stream.as_fd()
+    }
+
+    /// Creates another handle to the same connected Unix stream.
+    ///
+    /// # Errors
+    /// Returns [`UnixError`] when duplicating the stream fails.
+    pub fn try_clone(&self) -> Result<Self, UnixError> {
+        self.stream
+            .try_clone()
+            .map(|stream| Self { stream })
+            .map_err(|source| UnixError::Socket {
+                operation: "try_clone",
+                path: PathBuf::from("<connected-stream>"),
+                source,
+            })
     }
 }
 

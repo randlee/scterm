@@ -168,6 +168,12 @@ where
         &self.raw_mode
     }
 
+    /// Returns mutable access to the connected session stream.
+    #[must_use]
+    pub fn stream_mut(&mut self) -> &mut UnixSocketStream {
+        &mut self.stream
+    }
+
     /// Consumes the live attachment and sends a detach packet.
     ///
     /// # Errors

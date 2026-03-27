@@ -5,8 +5,10 @@
 )]
 
 use anyhow::{anyhow, Context, Result};
+use nix::sys::signal::Signal;
 use std::collections::VecDeque;
 use std::fs;
+use std::os::fd::BorrowedFd;
 use std::path::{Path, PathBuf};
 
 use scterm_core::{
@@ -56,6 +58,7 @@ struct QueuedInput {
 
 #[derive(Debug)]
 struct ClientConnection {
+    id: u64,
     stream: UnixSocketStream,
 }
 
@@ -211,12 +214,33 @@ where
         self.listener.accept().context("accept next session client")
     }
 
+    /// Returns the master listener file descriptor.
+    #[must_use]
+    pub fn listener_fd(&self) -> BorrowedFd<'_> {
+        self.listener.as_fd()
+    }
+
     /// Marks a newly connected client as attached and returns any ring replay bytes.
     ///
     /// # Errors
     /// Returns an error when attached-state metadata cannot be updated.
     pub fn attach_client(
         &mut self,
+        stream: UnixSocketStream,
+        request: AttachRequest,
+    ) -> Result<Vec<u8>> {
+        let client_id =
+            u64::try_from(self.clients.len()).map_err(|_| anyhow!("too many attached clients"))?;
+        self.attach_client_with_id(client_id, stream, request)
+    }
+
+    /// Marks a client identified by `client_id` as attached and returns any ring replay bytes.
+    ///
+    /// # Errors
+    /// Returns an error when attached-state metadata cannot be updated.
+    pub fn attach_client_with_id(
+        &mut self,
+        client_id: u64,
         stream: UnixSocketStream,
         request: AttachRequest,
     ) -> Result<Vec<u8>> {
@@ -236,7 +260,10 @@ where
             return Err(error);
         }
 
-        self.clients.push(ClientConnection { stream });
+        self.clients.push(ClientConnection {
+            id: client_id,
+            stream,
+        });
 
         if request.skip_ring_replay() {
             Ok(Vec::new())
@@ -260,6 +287,19 @@ where
         }
         self.logger.emit("master", "detach", "client detached")?;
         Ok(())
+    }
+
+    /// Detaches the client identified by `client_id`.
+    ///
+    /// # Errors
+    /// Returns an error when the client is unknown or attached-state metadata cannot be updated.
+    pub fn detach_client_by_id(&mut self, client_id: u64) -> Result<()> {
+        let index = self
+            .clients
+            .iter()
+            .position(|client| client.id == client_id)
+            .ok_or_else(|| anyhow!("client id {client_id} is out of range"))?;
+        self.detach_client(index)
     }
 
     /// Enqueues user input for serialized PTY delivery.
@@ -378,6 +418,76 @@ where
     #[must_use]
     pub fn ring_snapshot(&self) -> Vec<u8> {
         self.ring.snapshot()
+    }
+
+    /// Returns the PTY master file descriptor.
+    #[must_use]
+    pub fn pty_fd(&self) -> BorrowedFd<'_> {
+        self.pty.as_fd()
+    }
+
+    /// Reads bytes from the PTY master.
+    ///
+    /// # Errors
+    /// Returns an error when the PTY read fails.
+    pub fn read_pty(&self, buffer: &mut [u8]) -> Result<usize> {
+        self.pty.read(buffer).context("read from PTY master")
+    }
+
+    /// Resizes the PTY master window.
+    ///
+    /// # Errors
+    /// Returns an error when the PTY resize fails.
+    pub fn resize_pty(&self, size: WindowSize) -> Result<()> {
+        self.pty.resize(size).context("resize PTY")
+    }
+
+    /// Sends `signal` to the child process group.
+    ///
+    /// # Errors
+    /// Returns an error when signaling fails.
+    pub fn signal_child_group(&self, signal: Signal) -> Result<()> {
+        self.pty
+            .signal_group(signal)
+            .with_context(|| format!("signal child group with {signal:?}"))
+    }
+
+    /// Returns whether the PTY child has exited.
+    ///
+    /// # Errors
+    /// Returns an error when polling the child state fails.
+    pub fn child_exited(&self) -> Result<bool> {
+        self.pty
+            .try_wait()
+            .map(|status| status.is_some())
+            .context("poll PTY child exit status")
+    }
+
+    /// Writes `bytes` to the attached client identified by `client_id`.
+    ///
+    /// # Errors
+    /// Returns an error when the client is unknown or the write fails.
+    pub fn write_to_client(&mut self, client_id: u64, bytes: &[u8]) -> Result<()> {
+        let client = self
+            .clients
+            .iter_mut()
+            .find(|client| client.id == client_id)
+            .ok_or_else(|| anyhow!("client id {client_id} is out of range"))?;
+        client
+            .stream
+            .write_all(bytes)
+            .context("write bytes to attached client")?;
+        client.stream.flush().context("flush attached client")?;
+        Ok(())
+    }
+
+    /// Clears the ring buffer and truncates the persistent log.
+    ///
+    /// # Errors
+    /// Returns an error when the persistent log cannot be truncated.
+    pub fn clear_history(&mut self) -> Result<()> {
+        let _ = self.ring.drain();
+        self.log.clear()
     }
 
     fn enqueue(&mut self, source: InputSource, bytes: impl Into<Vec<u8>>) {

@@ -7,12 +7,12 @@
 use std::env;
 use std::ffi::{CStr, CString};
 use std::io;
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 
 use nix::fcntl::{fcntl, FcntlArg, FdFlag};
 use nix::pty::{forkpty, Winsize};
 use nix::sys::signal::{kill, Signal};
-use nix::sys::wait::{waitpid, WaitStatus};
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{execvp, read, write, Pid};
 use scterm_core::WindowSize;
 
@@ -130,6 +130,38 @@ impl PtyProcess {
     /// Returns [`UnixError`] when `waitpid` fails.
     pub fn wait(&self) -> Result<WaitStatus, UnixError> {
         waitpid(self.child_pid, None).map_err(nix_to_pty_error("waitpid"))
+    }
+
+    /// Polls the child process for exit without blocking.
+    ///
+    /// # Errors
+    /// Returns [`UnixError`] when `waitpid` fails.
+    pub fn try_wait(&self) -> Result<Option<WaitStatus>, UnixError> {
+        match waitpid(self.child_pid, Some(WaitPidFlag::WNOHANG))
+            .map_err(nix_to_pty_error("waitpid(WNOHANG)"))?
+        {
+            WaitStatus::StillAlive => Ok(None),
+            status => Ok(Some(status)),
+        }
+    }
+
+    /// Writes all bytes from `buffer` to the PTY master.
+    ///
+    /// # Errors
+    /// Returns [`UnixError`] when the PTY write fails.
+    pub fn write_all(&self, buffer: &[u8]) -> Result<(), UnixError> {
+        let mut written = 0_usize;
+        while written < buffer.len() {
+            let chunk = self.write(&buffer[written..])?;
+            written += chunk;
+        }
+        Ok(())
+    }
+
+    /// Returns the PTY master file descriptor as a borrowed handle.
+    #[must_use]
+    pub fn as_fd(&self) -> BorrowedFd<'_> {
+        self.master.as_fd()
     }
 }
 
