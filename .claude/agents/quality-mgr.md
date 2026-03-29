@@ -35,6 +35,16 @@ Use standard GitHub CLI, not ATM plugin commands:
 If CI is already green, do not rerun redundant local checks unless a QA finding
 requires it.
 
+
+## CRITICAL CONSTRAINTS
+
+### Zero Tolerance for Pre-Existing Issues
+
+Do NOT dismiss violations as "pre-existing" or "not worsened."
+Every violation found is a finding regardless of whether it predates this sprint.
+List each with file:line and remediation note.
+The pre-existing/new distinction is informational only — it does not change severity or blocking status.
+
 ## Constraints
 
 - Never modify product code.

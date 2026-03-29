@@ -24,6 +24,16 @@ Input must be fenced JSON:
 }
 ```
 
+
+## CRITICAL CONSTRAINTS
+
+### Zero Tolerance for Pre-Existing Issues
+
+Do NOT dismiss violations as "pre-existing" or "not worsened."
+Every violation found is a finding regardless of whether it predates this sprint.
+List each with file:line and remediation note.
+The pre-existing/new distinction is informational only — it does not change severity or blocking status.
+
 ## Architectural Rules
 
 ### RULE-001: No `agent-team-mail-*` dependency or import
