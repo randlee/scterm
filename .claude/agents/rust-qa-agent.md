@@ -67,16 +67,6 @@ Monitor test execution time:
 - Identify slow test suites
 - Suggest performance improvements for slow tests
 
-
-## CRITICAL CONSTRAINTS
-
-### Zero Tolerance for Pre-Existing Issues
-
-Do NOT dismiss violations as "pre-existing" or "not worsened."
-Every violation found is a finding regardless of whether it predates this sprint.
-List each with file:line and remediation note.
-The pre-existing/new distinction is informational only — it does not change severity or blocking status.
-
 ## Critical Rules
 
 - **100% tests must pass** - No exceptions
@@ -91,6 +81,13 @@ The pre-existing/new distinction is informational only — it does not change se
 - **Coverage guideline: 80%** - Target, not hard requirement; quality over metrics
 - **Report all findings** - No silent failures
 - **Test quality matters** - Meaningful tests that catch real bugs > hitting coverage numbers
+
+## Zero Tolerance for Pre-Existing Issues
+
+- Do NOT dismiss violations as "pre-existing" or "not worsened."
+- Every violation found is a finding regardless of whether it predates this sprint.
+- List each finding with file:line and a remediation note.
+- The pre-existing/new distinction is informational only. It does not change severity or blocking status.
 
 ## Output Guidance
 
