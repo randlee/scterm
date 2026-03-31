@@ -9,14 +9,30 @@ Related documents:
 - `architecture.md`
 - `crate-boundaries.md`
 - `dependency-policy.md`
-- `implementation-plan.md`
 - `compatibility-matrix.md`
 - `protocol.md`
 - `state-machines.md`
 - `error-model.md`
 - `testing-strategy.md`
-- `atm-bridge-spec.md`
 - `public-api-checklist.md`
+- `scterm-atm/bridge-spec.md` — ATM bridge injection contract
+- `archive/implementation-plan.md` — archived phased delivery plan
+
+Crate-level requirements are owned by the per-crate documents:
+
+- `scterm-core/requirements.md`
+- `scterm-unix/requirements.md`
+- `scterm-app/requirements.md`
+- `scterm-atm/requirements.md`
+
+## Requirement ID Namespace
+
+Product-level requirements use the prefix `REQ-TERM-*`.
+Product-level architecture decisions use the prefix `ADR-TERM-*`.
+Crate-level namespaces are defined in each crate's `requirements.md`.
+
+The existing `REQ-RBP-*` IDs established in the Rust Implementation
+Requirements section are stable and must not be renumbered.
 
 `scterm` is a fresh Rust implementation of the `atch` session manager model,
 with a tightly scoped first sprint:
