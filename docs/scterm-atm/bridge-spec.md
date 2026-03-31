@@ -1,9 +1,12 @@
-# scterm ATM Bridge Spec
+# scterm-atm Bridge Spec
 
 ## Purpose
 
 This document defines the ATM extension as an adapter on top of the Sprint 1
 session core.
+
+Satisfies: product requirements in `../requirements.md` — Sprint 2 ATM
+Integration Requirements section.
 
 ## Scope
 
@@ -71,5 +74,5 @@ Rules:
 
 ## Logging Policy
 
-ATM bridge activity should be logged through the app-owned `AppLogger`,
-not through direct stdout/stderr noise in the session.
+ATM bridge activity should be logged through the app-owned `sc-observability`
+logger, not through direct stdout/stderr noise in the session.

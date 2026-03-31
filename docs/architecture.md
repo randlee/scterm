@@ -9,14 +9,21 @@ Related documents:
 - `requirements.md`
 - `crate-boundaries.md`
 - `dependency-policy.md`
-- `implementation-plan.md`
 - `compatibility-matrix.md`
 - `protocol.md`
 - `state-machines.md`
 - `error-model.md`
 - `testing-strategy.md`
-- `atm-bridge-spec.md`
 - `public-api-checklist.md`
+- `scterm-atm/bridge-spec.md` — ATM bridge injection contract
+- `archive/implementation-plan.md` — archived phased delivery plan
+
+Crate-level architecture documents:
+
+- `scterm-core/architecture.md`
+- `scterm-unix/architecture.md`
+- `scterm-app/architecture.md`
+- `scterm-atm/architecture.md`
 
 The architecture is intentionally phased:
 
