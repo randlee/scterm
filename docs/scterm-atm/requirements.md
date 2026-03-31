@@ -38,7 +38,7 @@ and failure policy.
 The following product requirements from `../requirements.md` are implemented
 by this crate:
 
-- Sprint 2 ATM Integration Requirements section — all items
+- Sprint 2 ATM Integration Requirements section — ATM adapter-only items
 - ATM Message Relevance Filter section
 - Hard Constraints section (ATM boundary rules)
 - Inbound Message Delivery section
@@ -51,7 +51,7 @@ This crate shall not depend on `agent-team-mail-*` or any ATM Rust crates.
 It integrates only via the external `atm` CLI.
 
 Satisfies: Hard Constraints section in `../requirements.md` and RULE-001 in
-`../.github/workflows/ci.yml` ATM boundary gate.
+`../../.github/workflows/ci.yml` ATM boundary gate.
 
 ## REQ-TERM-ATM-002 — No ATM_HOME Reference
 
@@ -74,3 +74,32 @@ restarts and client reconnects shall not cause reinjection.
 
 Satisfies: Inbound Message Delivery section and Failure Handling section in
 `../requirements.md`.
+
+## REQ-TERM-ATM-005 — Blocking Read and Relevance Ownership
+
+`scterm-atm` shall own the adapter mechanics that make inbound ATM delivery
+usable without leaking ATM concerns elsewhere:
+
+- blocking `atm read --timeout ...` or equivalent subscription usage
+- the relevance filter and self-sender suppression rules
+- sender/text normalization before the app layer sees an inbound event
+
+The app layer consumes normalized injection requests; it does not parse ATM CLI
+output itself.
+
+Satisfies: ATM Message Relevance Filter section, Hard Constraints section, and
+Inbound Message Delivery section in `../requirements.md`.
+
+## REQ-TERM-ATM-006 — Failure Isolation
+
+ATM adapter failures shall degrade gracefully:
+
+- missing `atm` CLI
+- malformed ATM output
+- watcher crash or restart
+- dedupe-state persistence failures
+
+These failures must not become mandatory runtime dependencies for non-ATM
+session use.
+
+Satisfies: Failure Handling section in `../requirements.md`.

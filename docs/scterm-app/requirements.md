@@ -21,7 +21,8 @@ Crate-level architecture decisions use the prefix `ADR-TERM-APP-*`.
 - attach client loop (log replay, ring replay, live streaming)
 - PTY input serialization across all input sources
 - session log replay and ring replay orchestration
-- structured logging setup and logger lifecycle via `sc-observability`
+- structured logging setup and logger lifecycle via the self-contained
+  `AppLogger`
 - CLI command parsing, aliases, legacy single-letter modes
 - user-facing message rendering and exit codes
 - wiring of platform services and domain logic into session workflows
@@ -41,7 +42,7 @@ by this crate:
 - Session Lifecycle section — orchestration of master and attach client loops
 - Commands and Command Semantics sections — full command surface
 - Option Handling section — all CLI options and placement rules
-- Structured Logging section — `sc-observability` wiring and logger lifecycle
+- Structured Logging section — `AppLogger` wiring and logger lifecycle
 - Multi-Client Detach and Kill Semantics section — orchestration of client
   disconnects on kill
 - Error Handling and UX section — user-facing messages and exit codes
@@ -72,3 +73,59 @@ Satisfies: CLI Boundary section in `../architecture.md`.
 log file policy.
 
 Satisfies: Structured Logging section in `../requirements.md`.
+
+## REQ-TERM-APP-004 — Command Surface and Compatibility Wiring
+
+`scterm-app` shall own the complete command surface after parsing:
+
+- verb commands, aliases, and legacy single-letter modes
+- default-open orchestration and `attach`/`new`/`start`/`run` behavior
+- option placement compatibility and `--` handling
+- `list`, `current`, `push`, `kill`, and `clear` dispatch
+
+This crate consumes domain predicates from `scterm-core`; it must not
+re-implement those predicates locally.
+
+Satisfies: Commands section, Command Semantics section, and Option Handling
+section in `../requirements.md`.
+
+## REQ-TERM-APP-005 — Startup, Attach, and Replay Orchestration
+
+`scterm-app` shall own the orchestration rules that turn domain and platform
+primitives into a running session:
+
+- detached startup readiness and timeout policy
+- wait-for-first-attach behavior
+- attach order: log replay, socket connect, ring replay, then live streaming
+- attached-state metadata management for `list`
+- multi-client disconnect ordering on detach, kill, and child exit
+
+Satisfies: Session Lifecycle section, Session History section, and Multi-Client
+Detach and Kill Semantics section in `../requirements.md`.
+
+## REQ-TERM-APP-006 — Single PTY Write Path
+
+All PTY-bound input sources shall be serialized through a single app-owned
+write path in the master loop.
+
+- attached-client stdin
+- `push`
+- redraw-triggering control writes
+- ATM inbound message injections supplied by `scterm-atm`
+
+No client, adapter, or lower crate may write directly to the PTY file
+descriptor.
+
+Satisfies: PTY and Client Behavior section in `../requirements.md` and
+ADR-TERM-APP-001 in `architecture.md`.
+
+## REQ-TERM-APP-007 — UX and Exit-Code Ownership
+
+`scterm-app` and the final binary shall own:
+
+- user-facing error text
+- quiet-mode and empty-`list` rendering
+- mapping typed domain/runtime failures into the stable exit-code table
+
+Satisfies: Error Handling and UX section, Exit Codes section, and
+REQ-RBP-001 in `../requirements.md`.

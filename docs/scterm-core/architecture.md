@@ -14,11 +14,14 @@ The following is the expected module structure. Exact layout is authoritative
 in `crates/scterm-core/src/`.
 
 - `error` — `ScError` struct, kind classification, contextual accessors
-- `session` — `SessionName`, `SessionPath`, newtype constructors, path resolution
+- `session` — `SessionName`, `SessionPath`, validated constructors, and
+  portable path rules after CLI/session expansion
 - `ring` — in-memory ring buffer
-- `packet` — client-to-master packet definitions
-- `state` — session master and attach client state types
-- `ancestry` — ancestry environment variable handling, self-attach predicate
+- `packet` — client-to-master packet definitions and validator logic
+- `state` — session master and attach client state types and consuming
+  transitions
+- `ancestry` — ancestry environment variable naming, chain parsing/rendering,
+  and self-attach predicate
 - `config` — `LogCap`, `RingSize`
 
 ## Dependency Rule
@@ -44,3 +47,18 @@ value and return the new state. Invalid transitions are unrepresentable at the
 type level.
 
 See REQ-RBP-003 in `../requirements.md`.
+
+## ADR-TERM-CORE-003 — Domain Rules Stay Portable
+
+The crate owns the portable rule set that higher layers consume, but not the
+OS calls that discover runtime facts.
+
+Examples:
+
+- `scterm-core` owns stale-session classification as a domain condition, but
+  not Unix socket I/O
+- `scterm-core` owns ancestry parsing and self-attach detection, but not CLI
+  exit-code rendering
+- `scterm-core` owns log-cap and ring-size semantics, but not log file I/O
+
+See `requirements.md` REQ-TERM-CORE-004 through REQ-TERM-CORE-006.

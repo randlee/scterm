@@ -164,84 +164,48 @@ Use 3 crates for sprint 1, then add a 4th optional crate when ATM lands.
 
 ### Crate 1: `scterm-core`
 
-Owns:
+`scterm-core` owns the portable domain model: validated session identifiers,
+ancestry rules, packet and typestate contracts, history primitives, and typed
+domain errors.
 
-- packet types;
-- session config and option semantics after parsing;
-- session path resolution rules;
-- session ancestry/env-var derivation;
-- ring buffer implementation;
-- ATM-independent synthesized-input request types, only if a shared domain type
-  is needed at all;
-- shared error and result types that are independent of concrete I/O backends.
+See:
 
-Must not depend on:
-
-- Tokio
-- `portable-pty`
-- Unix socket types
-- `atm`
-
-Public API expectations:
-
-- public types use strong domain newtypes instead of raw primitives;
-- public I/O helpers prefer standard traits such as `Read`, `Write`, `AsRef`,
-  and `RangeBounds` where that improves ergonomics;
-- public modules and items are documented to Rust API guideline standards.
+- `scterm-core/requirements.md`
+- `scterm-core/architecture.md`
 
 ### Crate 2: `scterm-unix`
 
-Owns:
+`scterm-unix` owns Unix runtime primitives only: PTY/socket transport,
+raw-mode, signals, daemonization, and Unix-specific filesystem operations such
+as long-path socket support.
 
-- Unix domain socket transport;
-- PTY integration;
-- raw terminal mode handling;
-- signal handling;
-- process-group and daemonization mechanics;
-- filesystem primitives that are platform-specific.
+See:
 
-This crate is the Unix implementation of the runtime-facing interfaces used by
-the app layer.
+- `scterm-unix/requirements.md`
+- `scterm-unix/architecture.md`
 
 ### Crate 3: `scterm-app`
 
-Owns:
+`scterm-app` owns the product choreography: command dispatch, master/client
+orchestration, PTY-input serialization, attach/replay ordering, user-facing
+messages, exit-code mapping, and the self-contained `AppLogger`.
 
-- master/session orchestration;
-- attach-client orchestration;
-- command dispatch;
-- structured logging configuration and emission;
-- ordering of PTY writes from human input, `push`, redraw, and future ATM
-  injections;
-- compatibility behavior derived from `atch`.
+See:
 
-This is where the product behavior lives. It depends on `scterm-core` plus the
-selected runtime/platform implementation.
-
-Application error policy:
-
-- `scterm-app` may use `anyhow` at the orchestration boundary;
-- typed library errors from `scterm-core` and `scterm-unix` are preserved until
-  that boundary;
-- the binary maps the final application error into exit codes and user-facing
-  output.
-
-Structured logging policy:
-
-- use the self-contained `AppLogger` in `scterm-app` (serde_json + std::io) — no external observability crate dependency
-- keep logger lifecycle and sink configuration in `scterm-app` or the binary, not in lower crates
+- `scterm-app/requirements.md`
+- `scterm-app/architecture.md`
 
 ### Crate 4: `scterm-atm` (Phase 2)
 
-Owns:
+`scterm-atm` owns the optional ATM adapter: blocking CLI reads, relevance
+filtering, normalization, dedupe, and conversion into normalized injection
+requests for the app layer.
 
-- integration with the external `atm` CLI;
-- blocking read loop or subscription handling;
-- inbound message normalization;
-- delivery de-duplication;
-- conversion to `InboundMessage` events for `scterm-app`.
+See:
 
-This crate should remain optional and feature-gated.
+- `scterm-atm/requirements.md`
+- `scterm-atm/architecture.md`
+- `scterm-atm/bridge-spec.md`
 
 ### Binary Crate
 
@@ -283,96 +247,33 @@ The runtime model must remain explicit.
 
 ## Structured Logging Boundary
 
-Structured logging uses a self-contained `AppLogger` implemented directly in
-`scterm-app` using `serde_json` and `std::io`. No external observability crate
-dependency is required or permitted in this repo.
+Structured logging is intentionally application-owned. The top-level rule is
+that only `scterm-app` and the final binary configure or own the logger
+lifecycle; lower crates remain logging-implementation-agnostic.
 
-Boundary rules:
+The crate-local logging design lives in:
 
-- only `scterm-app` and the final binary own and configure the `AppLogger`
-- `scterm-core` stays logging-implementation-agnostic
-- `scterm-unix` stays logging-implementation-agnostic
-- lower crates prefer rich typed errors and return values over ad-hoc logging
-
-This keeps local structured logs available immediately without widening the
-core architecture to include broader observability concerns.
+- `scterm-app/requirements.md`
+- `scterm-app/architecture.md`
 
 ## Phase 1 Core Components
 
-### CLI Layer
+Phase 1 is still organized around four system components:
 
-Responsibilities:
+- CLI layer
+- master daemon
+- attach client
+- session storage
 
-- parse command-based and legacy-compatible invocation forms;
-- resolve session names into socket and log paths;
-- apply option precedence and placement rules;
-- select the command path: attach, create, list, push, kill, clear, current.
+Their crate-local ownership and detailed responsibilities now live in:
 
-The CLI layer is policy-heavy but state-light. It should not own PTY or socket
-logic.
+- `scterm-app/architecture.md` — CLI layer, master daemon, attach client, and
+  storage coordination
+- `scterm-unix/architecture.md` — PTY/socket/raw-mode/signal/daemonization
+  runtime primitives
+- `scterm-core/architecture.md` — packet/state/history/ancestry domain models
 
-### Master Daemon
-
-Responsibilities:
-
-- create and own the control socket;
-- spawn and supervise the PTY child process;
-- receive client packets;
-- forward PTY output to attached clients;
-- maintain the in-memory scrollback ring;
-- append output to the persistent log;
-- manage session cleanup and end markers;
-- arbitrate all writes into the PTY input stream.
-
-The master is the single source of truth for a session.
-
-**Attached-state metadata**: The master maintains a per-session attached-state
-flag equivalent to `atch`'s socket execute-bit marker. The master sets this
-flag when the first client attaches and clears it when the last client
-detaches. This flag is readable by `list` to distinguish running-with-clients
-from running-without-clients. The flag is master-owned; no client or adapter
-may toggle it directly.
-
-The master should expose one explicit serialized input path, conceptually:
-
-- `enqueue_user_input`
-- `enqueue_push_input`
-- `enqueue_redraw_input`
-- `enqueue_inbound_message`
-
-Architecturally, all input sources flow through one master-owned PTY write
-path. The implementation may use a channel, a loop-owned queue, or any other
-single-point arbiter, but no clients, adapters, or lower layers may write
-directly to the PTY file descriptor. Single ownership of the write path is the
-rule; the exact serialization mechanism is an implementation detail owned by
-`scterm-app`.
-
-Output observation (tool-call tap) is deferred from Sprint 1. A hook point may
-be reserved only at the app layer, at the post-PTY-read / pre-broadcast tee
-point in the master read loop. It must be observe-only, non-blocking, and must
-not mutate or backpressure the PTY stream, the persistent log, or client
-broadcast.
-
-### Attach Client
-
-Responsibilities:
-
-- connect to the session socket;
-- replay the on-disk log before live attach;
-- request or skip ring replay as appropriate;
-- place the local terminal into raw mode;
-- forward stdin to the master;
-- detect detach and suspend behavior;
-- forward resize events;
-- restore the original terminal state on exit.
-
-### Session Storage
-
-Per session:
-
-- socket file for local client/master coordination;
-- plaintext log file for persistent history;
-- in-memory ring buffer for low-latency scrollback replay.
+Top-level architecture keeps only the cross-cutting system contract below.
 
 ## Control and Data Planes
 
@@ -739,149 +640,72 @@ All four must be in place before Sprint 1 code lands.
 `scterm-core` exports a typed library error, while the app layer owns the final
 application error boundary.
 
-Architecture rules:
+Crate-local ownership:
 
-- `scterm-core` exposes `ScError` as a public error struct with contextual
-  fields and backtrace support;
-- `ScError` may use an internal private or non-exhaustive kind classification;
-- public helper methods or accessors expose actionable conditions such as
-  session-not-found, stale-socket, self-attach-loop, no-tty, invalid-session
-  name, invalid-path, and log-cap-parse;
-- ATM-specific failures are not part of `scterm-core` and are handled in
-  `scterm-atm` or at the app boundary;
-- `scterm-app` may use `anyhow` or one equivalent application error strategy,
-  but library crates do not.
-
-This keeps `core` future-proof and prevents ATM concerns from leaking into the
-domain layer.
+- `scterm-core/requirements.md` — `ScError` contract
+- `scterm-app/requirements.md` — application error boundary and exit mapping
+- `scterm-atm/requirements.md` — ATM adapter failures outside core
 
 ### RBP-2 (Blocking) — Coarse Typestate Lifecycle
 
 Use typestate where it removes invalid public transitions without turning every
 internal phase into type noise.
 
-**Required coarse states**:
+The normative state set and transition rules remain product architecture, but
+their crate-local home is `scterm-core`.
 
-```text
-Session (master side):
-  Resolved -> Running
-  Resolved -> Stale        (socket file exists and connect() returns ECONNREFUSED)
+See:
 
-Attach client:
-  LogReplaying -> Connecting -> RingReplaying -> Live -> Detached
-```
-
-Note the attach client ordering: log replay reads the on-disk log file
-directly (no socket connection required) and must occur before the socket
-connection is established. This matches `atch` behavior and allows history
-replay even for stale sessions.
-
-The `Stale` state is a terminal state for `Session<Resolved>` when the socket
-is detected as stale. The caller must decide whether to remove the stale socket
-and create a fresh `Session<Resolved>` (default open mode) or fail
-(`attach` command).
-
-`Starting`, `Exiting`, and `Exited` are valid internal operational phases, but
-the coarse public typestate states remain `Resolved`, `Running`, and `Stale`.
-`Running` specifically means the control socket is created/bound/listening, the
-PTY child-start path succeeded, and a fresh client can connect.
-
-Replay internals may stay private implementation detail if that keeps the API
-clearer, but public lifecycle transitions should be consuming transitions rather
-than ad-hoc mutable state checks.
-
-Illustrative pattern:
-
-```rust
-pub struct Session<S> {
-    inner: SessionInner,
-    _state: PhantomData<S>,
-}
-
-impl Session<Resolved> {
-    pub fn start(self, ...) -> Result<Session<Running>, ScError> { ... }
-}
-
-impl Session<Stale> {
-    pub fn recover(self) -> Result<Session<Resolved>, ScError> { ... }
-}
-```
+- `scterm-core/requirements.md` (`REQ-TERM-CORE-005`)
+- `scterm-core/architecture.md`
+- `state-machines.md`
 
 ### RBP-3 (Important) — Sealed Platform Traits
 
-All platform abstraction traits (`PtyBackend`, `SocketTransport`, and any
-equivalent) must be sealed from day one using the standard sealed-trait pattern:
+All platform abstraction traits remain sealed from day one. The concrete trait
+boundary lives in `scterm-unix`.
 
-```rust
-mod sealed { pub trait Sealed {} }
+See:
 
-pub trait PtyBackend: sealed::Sealed { ... }
-pub trait SocketTransport: sealed::Sealed { ... }
-```
-
-This is zero-cost and prevents downstream crates from implementing the traits,
-preserving the ability to evolve the abstractions without breaking changes.
+- `scterm-unix/requirements.md` (`REQ-TERM-UNIX-001`)
+- `scterm-unix/architecture.md`
 
 ### RBP-4 (Important) — Domain Newtypes and Builder Shapes
 
-Do not pass raw primitives across API boundaries. Define these newtypes in
-`scterm-core`:
+Validated domain newtypes and builder-shape rules are owned by
+`scterm-core`.
 
-| Newtype | Wraps | Validated by constructor |
-|---------|-------|--------------------------|
-| `SessionName` | `String` | no `/`, non-empty, valid chars |
-| `SessionPath` | `PathBuf` | absolute path, non-empty |
-| `LogCap` | `u64` | accepts bare bytes and `k`/`K`/`m`/`M` suffixes, `0` = disabled |
-| `RingSize` | `usize` | non-zero |
+See:
 
-All constructors return `Result<T, ScError>` using the appropriate variant.
-`LogCap::disabled()` is a named constructor for the zero case.
-
-Configuration paths with four or more semantically distinct inputs should use a
-builder or grouped config type instead of long positional constructors.
+- `scterm-core/requirements.md` (`REQ-TERM-CORE-003`)
+- `scterm-core/architecture.md`
 
 ### RBP-5 (Blocking) — Documentation and API Hygiene
 
 Public Rust APIs are contractual surface area.
 
-Architecture rules:
-
-- every public crate has crate docs;
-- every public module has `//!` docs;
-- public items have summary sentences and canonical doc sections where
-  applicable;
-- important public APIs include examples;
-- re-exports that form part of the primary API use `#[doc(inline)]`.
-
-This is not optional documentation polish. It is part of making the codebase
-navigable and safe for both humans and agents.
+This remains a workspace-wide rule. Detailed crate-level checklists live in
+`public-api-checklist.md` and the per-crate requirement docs.
 
 ### RBP-6 (Blocking) — Lints and Tooling Gates
 
 The workspace should enable linting policy before feature work starts.
 
-Architecture rules:
-
-- workspace `Cargo.toml` defines `lints.rust` and `lints.clippy`;
-- `cargo fmt`, `cargo clippy -D warnings`, and tests are required local and CI
-  gates;
-- `allow` and `expect` attributes require explicit reasons;
-- dependency-health tools such as `cargo-audit`, `cargo-hack`, and `cargo-udeps`
-  are planned as early follow-up gates.
+This remains a workspace-wide rule; the top-level policy is defined here and
+the detailed ownership is tracked through the per-crate docs and
+`public-api-checklist.md`.
 
 ### RBP-7 (Blocking) — Unsafe Containment
 
 Unsafe code is a platform implementation detail, not a general-purpose escape
 hatch.
 
-Architecture rules:
+The concrete unsafe-bearing boundary is owned by `scterm-unix`.
 
-- `scterm-core`, `scterm-app`, and `scterm-atm` contain no `unsafe` in Sprint 1;
-- any `unsafe` required for Unix runtime integration is isolated to
-  `scterm-unix`;
-- each `unsafe` block documents its invariants and soundness argument;
-- unsafe-bearing units are kept narrow enough for focused testing and Miri where
-  practical.
+See:
+
+- `scterm-unix/requirements.md` (`REQ-TERM-UNIX-002`)
+- `scterm-unix/architecture.md`
 
 ## Architectural Summary
 
