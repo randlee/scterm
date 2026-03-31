@@ -72,6 +72,12 @@ Satisfies: CLI Boundary section in `../architecture.md`.
 (`scterm-core`, `scterm-unix`) must not configure sinks, logger lifecycle, or
 log file policy.
 
+The decision to replace `sc-observability` with the self-contained `AppLogger`
+is recorded in `architecture.md` (`ADR-TERM-APP-005`). The prohibition on
+external observability dependencies also appears in `../requirements.md`
+(`Structured Logging`) and `../dependency-policy.md`
+(`Observability Dependency Policy`).
+
 Satisfies: Structured Logging section in `../requirements.md`.
 
 ## REQ-TERM-APP-004 — Command Surface and Compatibility Wiring
@@ -129,3 +135,10 @@ ADR-TERM-APP-001 in `architecture.md`.
 
 Satisfies: Environment and Nesting section, Error Handling and UX section,
 Exit Codes section, and REQ-RBP-001 in `../requirements.md`.
+
+## REQ-TERM-APP-008 — No Unsafe in scterm-app
+
+`scterm-app` and any binary targets it owns shall contain no `unsafe` blocks in
+Sprint 1.
+
+Satisfies: REQ-RBP-007 in `../requirements.md`.

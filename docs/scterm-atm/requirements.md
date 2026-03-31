@@ -103,3 +103,9 @@ These failures must not become mandatory runtime dependencies for non-ATM
 session use.
 
 Satisfies: Failure Handling section in `../requirements.md`.
+
+## REQ-TERM-ATM-007 — No Unsafe in scterm-atm
+
+`scterm-atm` shall contain no `unsafe` blocks in Sprint 1.
+
+Satisfies: REQ-RBP-007 in `../requirements.md`.

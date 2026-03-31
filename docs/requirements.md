@@ -242,6 +242,9 @@ Option handling requirements:
 - Structured logging is a product requirement, but the logging implementation
   and lifecycle are owned by `scterm-app/requirements.md`
   (`REQ-TERM-APP-003`).
+- The decision to replace the earlier `sc-observability` dependency direction
+  with a self-contained `AppLogger` is recorded in
+  `scterm-app/architecture.md` (`ADR-TERM-APP-005`).
 - The product-level contract is:
   - local structured logs remain available for debugging and CI diagnostics
   - lower crates do not own logger lifecycle or sink configuration
@@ -285,6 +288,7 @@ Option handling requirements:
 The ancestry environment contract is normative Sprint 1 behavior and shall
 match `atch`.
 
+- The ancestry chain shall impose no fixed nesting-depth cap in Sprint 1.
 - `current` shall render the ancestry chain in human-readable order.
 - `clear` with no explicit session argument shall target the innermost session
   from that chain.
@@ -454,8 +458,17 @@ The implementation shall follow a library/application split for error handling.
 All public Rust surface area shall be documented from the first code-bearing
 commit.
 
+- Every public crate shall have crate-level documentation.
+- Every public module shall have `//!` module documentation.
+- Every public type and function shall have a short summary sentence.
+- Public items shall include canonical Rust doc sections when applicable:
+  `# Examples`, `# Errors`, `# Panics`, `# Safety`, and `# Abort`.
+- Key user-facing and extension-facing APIs shall include directly usable
+  examples.
+- Re-exported internal items intended to appear as primary API shall use
+  `#[doc(inline)]`.
 - Ownership note: crate-local API documentation obligations are further
-  specified in the per-crate requirement docs and in `public-api-checklist.md`.
+  tracked in the per-crate requirement docs and in `public-api-checklist.md`.
 
 ### REQ-RBP-003 — Typestate at Coarse Lifecycle Boundaries (Blocking)
 
@@ -484,9 +497,11 @@ The implementation shall define `SessionName`, `SessionPath`, `LogCap`, and
 `RingSize` as newtypes in `scterm-core`. Raw strings, `PathBuf`, and numeric
 primitives shall not be passed across public API boundaries in their place.
 
+- Configuration or constructor paths requiring four or more semantically
+  distinct parameters shall use a builder or grouped config type rather than a
+  long positional parameter list.
 - Ownership note: the concrete newtype and builder obligations are owned by
-  `scterm-core/requirements.md` (`REQ-TERM-CORE-003`) and the relevant
-  crate-local API docs.
+  `scterm-core/requirements.md` (`REQ-TERM-CORE-003`).
 
 ### REQ-RBP-006 — Lints and Tooling from Day One (Blocking)
 
@@ -514,9 +529,14 @@ by `public-api-checklist.md` and the per-crate requirement docs.
 
 Unsafe Rust shall be treated as an exception path, not a convenience tool.
 
-- Ownership note: the concrete unsafe-bearing boundary is owned by
-  `scterm-unix/requirements.md` (`REQ-TERM-UNIX-002`), while the
-  non-unsafe expectation for the other crates is enforced by review and CI.
+- `scterm-core`, `scterm-app`, and `scterm-atm` shall contain no `unsafe`
+  blocks in Sprint 1.
+- Ownership note: the Unix unsafe boundary is owned by
+  `scterm-unix/requirements.md` (`REQ-TERM-UNIX-002`), while the explicit
+  no-unsafe requirements for the other crates live in
+  `scterm-core/requirements.md` (`REQ-TERM-CORE-007`),
+  `scterm-app/requirements.md` (`REQ-TERM-APP-008`), and
+  `scterm-atm/requirements.md` (`REQ-TERM-ATM-007`).
 
 ## Future Considerations
 

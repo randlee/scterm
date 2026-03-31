@@ -73,6 +73,10 @@ Satisfies: REQ-RBP-001 in `../requirements.md`.
 All newtype constructors (`SessionName::new`, `SessionPath::new`, `LogCap::new`,
 `RingSize::new`) shall return `Result<T, ScError>`.
 
+Configuration or constructor paths requiring four or more semantically
+distinct parameters shall use a builder or grouped config type rather than a
+long positional parameter list.
+
 Satisfies: REQ-RBP-005 in `../requirements.md`.
 
 ## REQ-TERM-CORE-004 — Ancestry and Self-Attach Semantics
@@ -80,12 +84,23 @@ Satisfies: REQ-RBP-005 in `../requirements.md`.
 `scterm-core` shall own the normative ancestry contract:
 
 - derive the ancestry environment variable name from the executable basename
+- transform that basename by uppercasing it, replacing non-alphanumeric
+  characters with `_`, and suffixing `_SESSION`
 - render and parse the colon-delimited socket-path chain
+- append nested ancestry as `previous_chain + ":" + current_socket`
+- treat a non-nested session as a single socket path with no colon
+- impose no fixed nesting-depth cap in Sprint 1
 - derive the `current` display chain from ancestry segments
 - derive the innermost default target used by `clear` when no explicit session
   is provided
 - detect self-attach loops by exact full-path comparison before any socket
   connection attempt
+- perform self-attach prevention in this order:
+  1. expand the target session path from the argument or default rules
+  2. scan each colon-delimited ancestry segment for exact full-path equality
+     with the target socket path
+  3. if any segment matches, return a typed self-attach `ScError`
+  4. perform the check before any socket connect attempt
 
 Satisfies: Environment and Nesting section and Exit Codes section in
 `../requirements.md`.
@@ -119,3 +134,9 @@ platform layers:
 The actual log file I/O and replay orchestration do not belong here.
 
 Satisfies: Session History section in `../requirements.md`.
+
+## REQ-TERM-CORE-007 — No Unsafe in scterm-core
+
+`scterm-core` shall contain no `unsafe` blocks in Sprint 1.
+
+Satisfies: REQ-RBP-007 in `../requirements.md`.

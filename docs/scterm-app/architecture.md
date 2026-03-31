@@ -118,3 +118,28 @@ It owns:
 - final mapping of typed errors into UX and exit status
 
 It does not own PTY/socket primitives or portable domain predicates.
+
+## ADR-TERM-APP-005 — Self-Contained AppLogger Replaces sc-observability
+
+This crate standardizes on a self-contained `AppLogger` implemented with
+`serde_json` and `std::io` instead of a dependency on the sibling
+`sc-observability` workspace.
+
+Rationale:
+
+- local structured logging is required immediately for debugging and CI
+- the prior `sc-observability` direction widened the dependency surface without
+  being required for the approved Sprint 1/2 design
+- keeping observability local to `scterm-app` preserves crate boundaries and
+  avoids introducing a broader observability subsystem into this repo
+
+What changed:
+
+- `scterm-app` owns logger lifecycle directly
+- lower crates remain logging-implementation-agnostic
+- dependency policy now treats `sc-observability` as forbidden in this repo
+
+When:
+
+- this decision was recorded during the `docs/content-migration` compliance
+  pass after the post-sprint documentation inventory review
