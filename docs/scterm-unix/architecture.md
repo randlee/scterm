@@ -11,7 +11,7 @@ the module structure, internal design decisions, and crate-level ADRs for
 ## Module Responsibilities
 
 The following is the expected module structure. Exact layout is authoritative
-in `crates/scterm-unix/src/`.
+in `scterm-unix/src/`.
 
 - `pty` — PTY creation, child spawn, read/write/resize, ownership
 - `socket` — Unix domain socket lifecycle (bind, connect, listen, accept,
@@ -38,3 +38,19 @@ If a rule matters outside the platform layer, it belongs in `scterm-core`.
 
 If `unsafe` blocks are needed, they are confined to the `pty` module.
 No other module in this crate shall use `unsafe`.
+
+## ADR-TERM-UNIX-003 — Platform Facts In, Product Policy Out
+
+This crate may discover Unix runtime facts and execute Unix-only mechanisms,
+but it must not interpret them into product decisions.
+
+Examples:
+
+- it may report socket-connect outcomes, but it does not decide stale-session
+  recovery policy
+- it may expose raw-mode and resize primitives, but it does not own attach or
+  detach semantics
+- it may perform the long-path `chdir` workaround, but it does not decide how
+  user-visible session names resolve
+
+See `requirements.md` REQ-TERM-UNIX-004 and REQ-TERM-UNIX-005.

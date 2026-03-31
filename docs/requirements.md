@@ -106,10 +106,12 @@ nudge waiting agent terminals into action.
   shall trigger the fallback path.
 - If no usable home directory is available, the implementation shall fall back
   to `/tmp/.<binary-name>-<uid>`.
-- Session socket paths that exceed the platform `sun_path` limit shall remain
-  supported via parent-directory `chdir` plus basename-only bind/connect.
-  Maximum supported session path depth is bounded by filesystem limits rather
-  than `sun_path`.
+- Support for session paths that exceed the platform `sun_path` limit remains a
+  product requirement, but the Unix-specific workaround is owned by
+  `scterm-unix/requirements.md` (`REQ-TERM-UNIX-004`).
+- Ownership note: validated session-name/path types are owned by
+  `scterm-core/requirements.md` (`REQ-TERM-CORE-003`), while user-visible
+  command/session expansion is owned by `scterm-app/requirements.md`.
 
 ### Commands
 
@@ -228,19 +230,25 @@ Option handling requirements:
   persistent log and in-memory ring buffer.
 - On first attach, the client shall receive history via log replay and ring
   replay before transitioning to live streaming.
+- Ownership note: the coarse lifecycle states and stale-session domain
+  conditions are owned by `scterm-core/requirements.md`
+  (`REQ-TERM-CORE-005`), runtime socket/PTY primitives are owned by
+  `scterm-unix/requirements.md` (`REQ-TERM-UNIX-004`,
+  `REQ-TERM-UNIX-005`), and startup/attach choreography is owned by
+  `scterm-app/requirements.md` (`REQ-TERM-APP-005`).
 
 ### Structured Logging
 
-- Structured logging shall use a self-contained `AppLogger` in `scterm-app`
-  implemented with `serde_json` and `std::io`. No external observability crate
-  dependency is required or permitted in this repo.
-- Structured logging shall be an application-layer concern owned by
-  `scterm-app` and the final binary wiring.
-- `scterm-core` shall not depend on any observability crate.
-- `scterm-unix` shall not directly configure sinks, logger lifecycle, or log
-  file policy.
-- Log payloads shall be structured, machine-readable, and suitable for local
-  debugging and CI diagnostics.
+- Structured logging is a product requirement, but the logging implementation
+  and lifecycle are owned by `scterm-app/requirements.md`
+  (`REQ-TERM-APP-003`).
+- The decision to replace the earlier `sc-observability` dependency direction
+  with a self-contained `AppLogger` is recorded in
+  `scterm-app/architecture.md` (`ADR-TERM-APP-005`).
+- The product-level contract is:
+  - local structured logs remain available for debugging and CI diagnostics
+  - lower crates do not own logger lifecycle or sink configuration
+  - no external observability dependency is required or permitted in this repo
 
 ### Multi-Client Detach and Kill Semantics
 
@@ -270,43 +278,27 @@ Option handling requirements:
 - When a stale socket is encountered, log replay shall still be possible.
 - The default ring buffer size shall be 128 KiB.
 - The default log cap shall be 1 MiB.
+- Ownership note: portable history primitives and replay-order rules are owned
+  by `scterm-core/requirements.md` (`REQ-TERM-CORE-006`), while log file I/O
+  and replay choreography are owned by `scterm-app/requirements.md`
+  (`REQ-TERM-APP-005`).
 
 ### Environment and Nesting
 
-The ancestry environment variable is normative Sprint 1 behavior and shall
+The ancestry environment contract is normative Sprint 1 behavior and shall
 match `atch`.
 
-- The variable name shall be derived from the executable basename
-  (`argv[0]` basename after the last `/`), uppercased, with every
-  non-alphanumeric character replaced by `_`, then suffixed with `_SESSION`.
-- For example, `scterm` yields `SCTERM_SESSION`; `ssh2incus-atch` yields
-  `SSH2INCUS_ATCH_SESSION`.
-- The environment value shall be a colon-separated chain of session socket
-  paths, outermost first.
-- A single non-nested session shall contain exactly one socket path and no
-  colon.
-- When spawning a child inside an existing session ancestry, the new session
-  socket path shall be appended as `previous_chain + ":" + current_socket`.
-- When no prior ancestry exists, the environment value shall be the current
-  session socket path.
-- The implementation shall impose no fixed nesting-depth cap in Sprint 1.
-- The `current` command shall render the basename of each ancestry segment and
-  join them with ` > `.
+- The ancestry chain shall impose no fixed nesting-depth cap in Sprint 1.
+- `current` shall render the ancestry chain in human-readable order.
 - `clear` with no explicit session argument shall target the innermost session
-  from the ancestry chain.
-- Self-attach prevention shall be implemented as a domain-layer predicate in
-  `scterm-core` that scans each colon-delimited ancestry segment for exact
-  full-path equality with the target socket path. Basename-only matches are not
-  sufficient.
-- Self-attach prevention sequence is normative:
-  1. expand the target session path from the argument or default rules
-  2. scan each colon-delimited ancestry segment for exact full-path equality
-     with the target socket path
-  3. if any segment matches, return a self-attach `ScError`
-  4. perform this check before any socket connect attempt
-- The CLI/app layer shall map ancestry and self-attach predicate failures to
-  user-visible messages and deterministic exit codes; it shall not own the
-  predicate itself.
+  from that chain.
+- Self-attach prevention shall remain a domain-layer predicate, not a CLI-local
+  guard.
+- Ownership note: the exact ancestry variable derivation, parsing/rendering
+  rules, and self-attach algorithm are owned by
+  `scterm-core/requirements.md` (`REQ-TERM-CORE-004`); the CLI/app layer only
+  maps those typed outcomes into user-visible messages and exit codes through
+  `scterm-app/requirements.md` (`REQ-TERM-APP-007`).
 
 ### Security and Isolation
 
@@ -366,7 +358,7 @@ codes must not be reassigned.
   mode, stale session handling, and non-TTY behavior.
 - The implementation shall build and test successfully on macOS and Linux.
 - The implementation shall satisfy the repository cross-platform rules in
-  `docs/cross-platform-guidelines.md`.
+  `cross-platform-guidelines.md`.
 
 ## Sprint 2 ATM Integration Requirements
 
@@ -450,17 +442,16 @@ The implementation shall follow a library/application split for error handling.
 - `scterm-app` and the final binary may use `anyhow` as the application error
   boundary, but only one application-level error strategy shall be used across
   those crates.
-- `scterm-core` shall expose a public `ScError` type implemented as a struct
-  with contextual fields and backtrace support, not as a public catch-all error
-  enum.
-- `ScError` may internally store a private or non-exhaustive kind
-  classification, but callers shall interact with it through accessors and
-  helper predicates.
-- All public API functions in `scterm-core` shall return `Result<T, ScError>`.
 - ATM-specific failures such as missing CLI or watcher crashes shall not be
   represented in `scterm-core`; they belong in `scterm-atm` and the app layer.
 - The CLI layer shall map application-facing failures to deterministic exit
   codes.
+- Ownership note: concrete `ScError` shape and core-library error rules live in
+  `scterm-core/requirements.md` (`REQ-TERM-CORE-001`,
+  `REQ-TERM-CORE-002`), Unix-library error rules live in
+  `scterm-unix/requirements.md`, and the single app-boundary strategy plus exit
+  mapping live in `scterm-app/requirements.md`
+  (`REQ-TERM-APP-001`, `REQ-TERM-APP-007`).
 
 ### REQ-RBP-002 — Public Documentation Standard (Blocking)
 
@@ -476,24 +467,20 @@ commit.
   examples.
 - Re-exported internal items intended to appear as primary API shall use
   `#[doc(inline)]`.
+- Ownership note: crate-local API documentation obligations are further
+  tracked in the per-crate requirement docs and in `public-api-checklist.md`.
 
 ### REQ-RBP-003 — Typestate at Coarse Lifecycle Boundaries (Blocking)
 
 The implementation shall use typestate where it materially prevents invalid
 session lifecycle transitions.
 
-- Session master states shall at minimum distinguish `Resolved`, `Running`,
-  and `Stale`. `Stale` is reached from `Resolved` when the socket file exists
-  but `connect()` returns `ECONNREFUSED`.
-- Attach client states shall follow this ordering:
-  `LogReplaying → Connecting → RingReplaying → Live → Detached`.
-  Log replay reads the on-disk log directly (no socket required) and must
-  precede socket connection. This ordering is not negotiable — it matches
-  `atch` behavior and enables history replay for stale sessions.
 - Replay phases may use typestate or private internal state as long as invalid
   public transitions remain unrepresentable or tightly constrained.
 - State transitions exposed across public API boundaries shall consume the old
   state and return the new state.
+- Ownership note: the concrete state set and transition obligations are owned
+  by `scterm-core/requirements.md` (`REQ-TERM-CORE-005`).
 
 ### REQ-RBP-004 — Sealed Platform Traits (Important)
 
@@ -501,16 +488,20 @@ Platform abstraction traits (`PtyBackend`, `SocketTransport`, and equivalents)
 shall be sealed using the `mod sealed` pattern from day one. External crates
 must not be able to implement these traits.
 
+Ownership note: the concrete trait boundary is owned by
+`scterm-unix/requirements.md` (`REQ-TERM-UNIX-001`).
+
 ### REQ-RBP-005 — Domain Newtypes and Builders (Important)
 
 The implementation shall define `SessionName`, `SessionPath`, `LogCap`, and
 `RingSize` as newtypes in `scterm-core`. Raw strings, `PathBuf`, and numeric
 primitives shall not be passed across public API boundaries in their place.
 
-- All newtype constructors shall return `Result<T, ScError>`.
 - Configuration or constructor paths requiring four or more semantically
   distinct parameters shall use a builder or grouped config type rather than a
   long positional parameter list.
+- Ownership note: the concrete newtype and builder obligations are owned by
+  `scterm-core/requirements.md` (`REQ-TERM-CORE-003`).
 
 ### REQ-RBP-006 — Lints and Tooling from Day One (Blocking)
 
@@ -527,9 +518,12 @@ commit that introduces Rust code.
   the immediate blocking gates.
 - The ATM boundary check (grep scan for `agent.team.mail`, `agent_team_mail`,
   `atm_`, `use atm::`, `ATM_HOME` in `*.rs` and `Cargo.toml`) is a CI gate
-  from day one. See `.github/workflows/ci.yml`.
+  from day one. See `../.github/workflows/ci.yml`.
 - CI runs on ubuntu-latest and macos-latest to enforce cross-platform
   compliance from the first code-bearing commit.
+
+Ownership note: crate-local lint and API-hygiene compliance is further tracked
+by `public-api-checklist.md` and the per-crate requirement docs.
 
 ### REQ-RBP-007 — Unsafe Containment Policy (Blocking)
 
@@ -537,11 +531,12 @@ Unsafe Rust shall be treated as an exception path, not a convenience tool.
 
 - `scterm-core`, `scterm-app`, and `scterm-atm` shall contain no `unsafe`
   blocks in Sprint 1.
-- If `unsafe` is required in `scterm-unix`, it shall be isolated to the
-  smallest possible module and documented with explicit safety invariants.
-- Every `unsafe` block shall have a nearby comment explaining why it is sound.
-- Unsafe-bearing units shall be structured so they can be tested independently,
-  and Miri coverage shall be added where practical.
+- Ownership note: the Unix unsafe boundary is owned by
+  `scterm-unix/requirements.md` (`REQ-TERM-UNIX-002`), while the explicit
+  no-unsafe requirements for the other crates live in
+  `scterm-core/requirements.md` (`REQ-TERM-CORE-007`),
+  `scterm-app/requirements.md` (`REQ-TERM-APP-008`), and
+  `scterm-atm/requirements.md` (`REQ-TERM-ATM-007`).
 
 ## Future Considerations
 

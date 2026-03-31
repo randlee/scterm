@@ -11,7 +11,7 @@ the module structure, internal design decisions, and crate-level ADRs for
 ## Module Responsibilities
 
 The following is the expected module structure. Exact layout is authoritative
-in `crates/scterm-atm/src/`.
+in `scterm-atm/src/`.
 
 - `watcher` — blocking `atm` CLI reader loop, reconnect policy
 - `filter` — inbound message relevance predicate
@@ -45,3 +45,16 @@ read, not ATM Rust crates. This preserves the ATM boundary and keeps
 ATM watcher failures are isolated. The master process and PTY child remain
 alive when the watcher errors or exits unexpectedly. Recovery is the
 watcher's responsibility.
+
+## ADR-TERM-ATM-003 — Normalize Before Injection
+
+The ATM adapter owns normalization before the app layer sees a message.
+
+That includes:
+
+- sender identity shaping
+- text sanitization
+- typed event construction
+- exactly-once dedupe decisions
+
+`scterm-app` receives a normalized injection request, not raw ATM CLI text.
