@@ -11,7 +11,7 @@ the module structure, internal design decisions, and crate-level ADRs for
 ## Module Responsibilities
 
 The following is the expected module structure. Exact layout is authoritative
-in `crates/scterm-core/src/`.
+in `scterm-core/src/`.
 
 - `error` — `ScError` struct, kind classification, contextual accessors
 - `session` — `SessionName`, `SessionPath`, validated constructors, and
@@ -23,6 +23,36 @@ in `crates/scterm-core/src/`.
 - `ancestry` — ancestry environment variable naming, chain parsing/rendering,
   and self-attach predicate
 - `config` — `LogCap`, `RingSize`
+
+## Control Packet Contract
+
+The client-to-master control packet model is owned by `scterm-core`.
+
+All client-to-master packets share a common fixed layout compatible with
+`atch`:
+
+```text
+Offset  Size   Field
+------  -----  -----
+0       1      packet type (u8, see table below)
+1       1      length / selector byte (u8)
+2       8      fixed payload area (`sizeof(struct winsize)` on the reference platform)
+```
+
+This is a 2-byte header plus fixed payload area. On the current local Unix
+reference platform, the total packet size is 10 bytes.
+
+| Type byte | Name     | Payload format |
+|-----------|----------|----------------|
+| `0x00`    | `push`   | `len` bytes from payload written into the PTY |
+| `0x01`    | `attach` | `len != 0` means skip ring replay |
+| `0x02`    | `detach` | no payload semantics |
+| `0x03`    | `winch`  | payload carries `winsize` |
+| `0x04`    | `redraw` | `len` carries redraw method; payload carries `winsize` |
+| `0x05`    | `kill`   | `len` carries signal value |
+
+Unknown type bytes are invalid packets. `len` is a single byte, not a 16-bit
+field, and its semantics depend on packet type.
 
 ## Dependency Rule
 

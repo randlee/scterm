@@ -11,7 +11,7 @@ the module structure, internal design decisions, and crate-level ADRs for
 ## Module Responsibilities
 
 The following is the expected module structure. Exact layout is authoritative
-in `crates/scterm-unix/src/`.
+in `scterm-unix/src/`.
 
 - `pty` — PTY creation, child spawn, read/write/resize, ownership
 - `socket` — Unix domain socket lifecycle (bind, connect, listen, accept,

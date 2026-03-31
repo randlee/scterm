@@ -11,7 +11,7 @@ the module structure, internal design decisions, and crate-level ADRs for
 ## Module Responsibilities
 
 The following is the expected module structure. Exact layout is authoritative
-in `crates/scterm-atm/src/`.
+in `scterm-atm/src/`.
 
 - `watcher` — blocking `atm` CLI reader loop, reconnect policy
 - `filter` — inbound message relevance predicate

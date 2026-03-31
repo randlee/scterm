@@ -11,7 +11,7 @@ the module structure, internal design decisions, and crate-level ADRs for
 ## Module Responsibilities
 
 The following is the expected module structure. Exact layout is authoritative
-in `crates/scterm-app/src/` and `src/` (binary).
+in `scterm-app/src/` and `src/` (binary).
 
 - `master` — master loop, PTY ownership, socket server, client dispatch
 - `client` — attach client loop, log replay, ring replay, live streaming

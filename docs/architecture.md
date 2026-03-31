@@ -283,31 +283,11 @@ Client-to-master traffic is structured control/data packets.
 
 #### Wire Format
 
-All client-to-master packets share a common fixed layout compatible with
-`atch`:
+The normative packet layout and per-type semantics are owned by
+`scterm-core/architecture.md` under `Control Packet Contract`.
 
-```
-Offset  Size   Field
-------  -----  -----
-0       1      packet type (u8, see table below)
-1       1      length / selector byte (u8)
-2       8      fixed payload area (`sizeof(struct winsize)` on the reference platform)
-```
-
-This is a 2-byte header plus fixed payload area. On the current local Unix
-reference platform, the total packet size is 10 bytes.
-
-| Type byte | Name     | Payload format                              |
-|-----------|----------|---------------------------------------------|
-| `0x00`    | `push`   | `len` bytes from payload written into the PTY |
-| `0x01`    | `attach` | `len != 0` means skip ring replay |
-| `0x02`    | `detach` | no payload semantics |
-| `0x03`    | `winch`  | payload carries `winsize` |
-| `0x04`    | `redraw` | `len` carries redraw method; payload carries `winsize` |
-| `0x05`    | `kill`   | `len` carries signal value |
-
-Unknown type bytes should be treated as invalid packets and the connection
-closed rather than guessed at. `len` is a single byte, not a 16-bit field.
+At the system level, the architecture only requires that client-to-master
+traffic remain a fixed-size binary control packet compatible with `atch`.
 
 ### Master to Client
 
@@ -341,33 +321,20 @@ the master does not reinterpret the terminal stream.
 
 ### Startup Readiness
 
-The session may be considered started only after all three of these conditions
-hold:
+Startup readiness is normatively defined in `requirements.md` under
+`Session Lifecycle`.
 
-- the control socket is created, bound, listening, and connectable
-- the PTY child-start path has succeeded, including exec-error handshake
-  success with the daemon child
-- a fresh client can connect to the socket
-
-This rule applies to detached `start` semantics and to any internal readiness
-handshake used between the CLI process and the master.
+Architecturally, readiness is enforced by `scterm-app` orchestration over
+`scterm-unix` socket and PTY runtime primitives.
 
 ### Stale Socket Definition
 
-A socket is **stale** when the socket file exists on the filesystem but no
-master process is listening on it. This is detected by attempting to connect:
-if `connect()` returns `ECONNREFUSED`, the socket is stale. A missing socket
-file is not a stale socket — it is an absent session.
+Stale socket classification is normatively defined in `requirements.md` under
+`Stale Socket Definition`.
 
-If the path exists but is not a socket, `connect()` resolution shall surface an
-invalid-session / `ENOTSOCK` hard error rather than stale-session recovery.
-
-No other `connect()` error implies stale recovery. Errors such as `ETIMEDOUT`
-or `EPERM` are hard failures and remain ordinary command errors.
-
-Stale sockets arise when the master process exits without cleaning up (e.g.
-crash, power loss, SIGKILL). The log file and session directory remain valid
-after a stale socket is detected and log replay must still be possible.
+Architecturally, stale detection still preserves the log file and session
+directory so history replay remains structurally possible after stale recovery
+begins.
 
 ### Stale Session Recovery
 
@@ -490,26 +457,11 @@ than shell text blobs once parsing is complete.
 
 ### ATM Relevance Filter
 
-The watcher must not inject every ATM message into the session — it must filter
-to messages intended for the current session or agent identity.
+The normative relevance criteria are defined in `requirements.md` under
+`ATM Message Relevance Filter`.
 
-**Relevance criteria** (evaluated in order, first match wins):
-
-1. **Explicit session address**: the ATM message `to` field matches the session
-   name or a configured identity alias for this session.
-2. **Ambient identity**: if no explicit address is present, the message is
-   relevant if the `to` field matches the current OS user identity (same user
-   that owns the session), and no other filter excludes it.
-3. **Exclusion**: messages sent by the session itself (where `from` matches the
-   session identity) must be suppressed to prevent feedback loops.
-
-The session identity is derived from the `SCTERM_SESSION` environment variable
-chain and the session name. The watcher receives the session name and socket
-path as configuration at startup — it does not read `ATM_HOME` or walk the ATM
-directory structure.
-
-The relevance filter is local to `scterm-atm` and must be explicitly tested.
-Unfiltered message injection is not acceptable.
+Architecturally, the filter is owned by `scterm-atm` and evaluated before the
+app layer sees an inbound injection request.
 
 ## ATM Injection Flow
 
@@ -537,20 +489,12 @@ That requires PTY input injection, not only PTY output decoration.
 
 ### Message Envelope
 
-The injected payload should use a deterministic, minimal envelope. For example:
+The exact injected payload format, sanitization rules, and final
+carriage-return behavior are normatively defined in `requirements.md`
+(`Message Format`) and `scterm-atm/bridge-spec.md`.
 
-```text
-[ATM from <sender>]
-<message text>
-<CR>
-```
-
-The exact formatting can evolve, but these properties are required:
-
-- sender identity is preserved;
-- message text is preserved;
-- unsafe control bytes are removed or escaped;
-- the final carriage return is always present.
+Architecturally, `scterm-atm` produces normalized injection requests and
+`scterm-app` serializes them onto the master-owned PTY input path.
 
 ## Failure Containment
 

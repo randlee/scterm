@@ -127,5 +127,5 @@ ADR-TERM-APP-001 in `architecture.md`.
 - quiet-mode and empty-`list` rendering
 - mapping typed domain/runtime failures into the stable exit-code table
 
-Satisfies: Error Handling and UX section, Exit Codes section, and
-REQ-RBP-001 in `../requirements.md`.
+Satisfies: Environment and Nesting section, Error Handling and UX section,
+Exit Codes section, and REQ-RBP-001 in `../requirements.md`.
