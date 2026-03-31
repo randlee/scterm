@@ -117,9 +117,8 @@ OTel path:
 
 Dependency version constraint:
 
-- `sc-observability` 0.45.x (published) depends on `agent-team-mail-core`
-  (ATM boundary violation). Use `sc-observability` 0.46.x via path dep until
-  0.46.x is published to crates.io.
+- A path dep to the local `../sc-observability` repo is used until the crate is
+  published to crates.io. Replace with a version pin after publish.
 
 ## CI Enforcement Targets
 

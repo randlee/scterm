@@ -157,6 +157,6 @@ Architecture:
 
 Dependency constraint:
 
-- `sc-observability` 0.45.x (latest crates.io) depends on `agent-team-mail-core`,
-  violating the ATM boundary rule. A path dep to the local 0.46.x is used until
-  0.46.x is published to crates.io as part of the versioning standards rollout.
+- A path dep to the local `../sc-observability` repo is used until the crate is
+  published to crates.io as part of the versioning standards rollout, at which
+  point the path dep is replaced with a version pin.

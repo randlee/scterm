@@ -20,11 +20,8 @@ atm = ["dep:scterm-atm"]
 [dependencies]
 anyhow = "1"
 nix = { version = "0.29", features = ["poll", "process", "signal", "term", "user"] }
-# Path dep until sc-observability 0.46.x is published to crates.io.
-# Published 0.45.2 depends on agent-team-mail-core (ATM boundary violation).
-# Replace with version constraint once 0.46.x is published.
-# NOTE: path resolves correctly from the main repo checkout (scterm/);
-# worktree builds require `cargo build` from the main repo.
+# Path dep until sc-observability is published to crates.io.
+# Replace with a version constraint once the publish is complete.
 sc-observability = { path = "../../sc-observability/crates/sc-observability" }
 sc-observability-types = { path = "../../sc-observability/crates/sc-observability-types" }
 time = "0.3"
