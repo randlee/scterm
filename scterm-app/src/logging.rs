@@ -9,6 +9,7 @@ use sc_observability::{Logger, LoggerConfig};
 use sc_observability_types::{
     ActionName, Level, LogEvent, ProcessIdentity, ServiceName, TargetCategory,
 };
+use serde_json::Map;
 use std::path::PathBuf;
 use time::OffsetDateTime;
 
@@ -81,7 +82,7 @@ impl AppLogger {
             outcome: Some("ok".to_owned()),
             diagnostic: None,
             state_transition: None,
-            fields: Default::default(),
+            fields: Map::default(),
         };
         self.inner
             .emit(event)
