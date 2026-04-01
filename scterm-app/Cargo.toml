@@ -22,8 +22,8 @@ anyhow = "1"
 nix = { version = "0.29", features = ["poll", "process", "signal", "term", "user"] }
 # Path dep until sc-observability is published to crates.io.
 # Replace with a version constraint once the publish is complete.
-sc-observability = { path = "../../sc-observability/crates/sc-observability" }
-sc-observability-types = { path = "../../sc-observability/crates/sc-observability-types" }
+sc-observability = { path = "../../../../sc-observability/crates/sc-observability" }
+sc-observability-types = { path = "../../../../sc-observability/crates/sc-observability-types" }
 time = "0.3"
 scterm-atm = { path = "../scterm-atm", optional = true }
 scterm-core = { path = "../scterm-core" }
