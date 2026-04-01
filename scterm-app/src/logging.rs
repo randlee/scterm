@@ -26,7 +26,8 @@ const SERVICE_NAME: &str = "scterm";
 ///
 /// The log root can also be set via the `SC_LOG_ROOT` environment variable when `log_root`
 /// is empty. The ATM app layer sets `SC_LOG_ROOT` at launch to unify scterm and schook
-/// logs under a common root without requiring this crate to read `ATM_HOME`.
+/// logs under a common root without requiring this crate to read any ATM environment
+/// variable.
 pub struct AppLogger {
     inner: Logger,
     service: ServiceName,

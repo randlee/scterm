@@ -153,10 +153,13 @@ Architecture:
 - `scterm-app` depends on `sc-observability` and `sc-observability-types`.
 - `scterm-core` and `scterm-unix` remain logging-implementation-agnostic.
 - `AppLogger` in `scterm-app/src/logging.rs` wraps `sc_observability::Logger`
-  behind the same `emit(target, action, message)` API — callers are unchanged.
+  behind the same `emit(target, action, message) -> Result<()>` API —
+  callers are unchanged.
 
 Dependency constraint:
 
-- A path dep to the local `../sc-observability` repo is used until the crate is
-  published to crates.io as part of the versioning standards rollout, at which
-  point the path dep is replaced with a version pin.
+- A path dep to the local
+  `../../../../sc-observability/crates/sc-observability` workspace path is
+  used until the crate is published to crates.io as part of the versioning
+  standards rollout, at which point the path dep is replaced with a version
+  pin.

@@ -242,13 +242,14 @@ Option handling requirements:
 - Structured logging is a product requirement, but the logging implementation
   and lifecycle are owned by `scterm-app/requirements.md`
   (`REQ-TERM-APP-003`).
-- The decision to replace the earlier `sc-observability` dependency direction
-  with a self-contained `AppLogger` is recorded in
-  `scterm-app/architecture.md` (`ADR-TERM-APP-005`).
+- The decision to standardize `scterm-app` on an
+  `sc-observability`-backed `AppLogger` is recorded in
+  `scterm-app/architecture.md` (`ADR-TERM-APP-006`).
 - The product-level contract is:
   - local structured logs remain available for debugging and CI diagnostics
   - lower crates do not own logger lifecycle or sink configuration
-  - no external observability dependency is required or permitted in this repo
+  - `scterm-app` shall use `sc-observability` as the mandated backend
+  - lower crates remain observability-backend agnostic
 
 ### Multi-Client Detach and Kill Semantics
 

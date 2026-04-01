@@ -188,7 +188,7 @@ See:
 
 `scterm-app` owns the product choreography: command dispatch, master/client
 orchestration, PTY-input serialization, attach/replay ordering, user-facing
-messages, exit-code mapping, and the self-contained `AppLogger`.
+messages, exit-code mapping, and the sc-observability-backed `AppLogger`.
 
 See:
 
@@ -434,6 +434,10 @@ That means:
 - no direct ATM Rust imports;
 - no `ATM_HOME` assumptions;
 - no requirement that ATM exist for core terminal use.
+
+Structured logging remains app-owned, and `scterm-app` uses
+`sc-observability` as the mandated backend per `scterm-app/architecture.md`
+(`ADR-TERM-APP-006`).
 
 ### ATM Watcher Adapter
 
