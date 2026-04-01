@@ -119,9 +119,9 @@ It owns:
 
 It does not own PTY/socket primitives or portable domain predicates.
 
-## ADR-TERM-APP-005 — Self-Contained AppLogger (SUPERSEDED by ADR-TERM-APP-006)
+## ADR-TERM-APP-005 — In-Repo AppLogger (SUPERSEDED by ADR-TERM-APP-006)
 
-~~This crate standardizes on a self-contained `AppLogger` implemented with
+~~This crate standardizes on an in-repo `AppLogger` implemented with
 `serde_json` and `std::io` instead of a dependency on the sibling
 `sc-observability` workspace.~~
 
@@ -137,7 +137,7 @@ Rationale:
 
 - When `scterm` and `schook` are both used in the ATM application, all tool
   logs must go to a consistent root directory so they are discoverable together.
-  A self-contained `AppLogger` writing to its own root provides no coordination
+  An in-repo `AppLogger` writing to its own root provides no coordination
   with the rest of the ecosystem.
 - `sc-observability` provides `LoggerConfig::default_for(service, log_root)`,
   where the log root is injected by the caller. That keeps shared log-root
