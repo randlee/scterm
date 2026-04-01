@@ -6,7 +6,9 @@
 
 use anyhow::{Context, Result};
 use sc_observability::{Logger, LoggerConfig};
-use sc_observability_types::{ActionName, Level, LogEvent, ProcessIdentity, ServiceName, TargetCategory};
+use sc_observability_types::{
+    ActionName, Level, LogEvent, ProcessIdentity, ServiceName, TargetCategory,
+};
 use std::path::PathBuf;
 use time::OffsetDateTime;
 
@@ -24,10 +26,18 @@ const SERVICE_NAME: &str = "scterm";
 /// The log root can also be set via the `SC_LOG_ROOT` environment variable when `log_root`
 /// is empty. The ATM app layer sets `SC_LOG_ROOT` at launch to unify scterm and schook
 /// logs under a common root without requiring this crate to read `ATM_HOME`.
-#[derive(Debug)]
 pub struct AppLogger {
     inner: Logger,
     service: ServiceName,
+}
+
+impl std::fmt::Debug for AppLogger {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AppLogger")
+            .field("service", &self.service)
+            .finish_non_exhaustive()
+    }
 }
 
 impl AppLogger {
@@ -40,8 +50,7 @@ impl AppLogger {
         let service =
             ServiceName::new(SERVICE_NAME).expect("'scterm' is a valid service name identifier");
         let config = LoggerConfig::default_for(service.clone(), log_root.into());
-        let inner =
-            Logger::new(config).context("initialize sc-observability logger for scterm")?;
+        let inner = Logger::new(config).context("initialize sc-observability logger for scterm")?;
         Ok(Self { inner, service })
     }
 
