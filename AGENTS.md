@@ -27,6 +27,7 @@ No silent processing.
 - [`docs/architecture.md`](docs/architecture.md) — architecture and boundaries
 - [`docs/cross-platform-guidelines.md`](docs/cross-platform-guidelines.md) — portability rules
 - [`.claude/skills/rust-development/guidelines.txt`](.claude/skills/rust-development/guidelines.txt) — Rust coding guidelines (read before writing code)
+- `$HOME/.claude/skills/rust-best-practices/SKILL.md` — Rust design-pattern and crate-boundary guidance (read before architecture or API changes)
 
 ## Build and Test
 

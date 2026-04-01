@@ -77,13 +77,9 @@ Forbidden:
 
 Allowed:
 
-- `sc-observability` from `../sc-observability`
+- `serde_json` (via AppLogger — no external observability crate)
 - CLI parsing crate
 - one application error crate
-
-Forbidden in Sprint 1:
-
-- any higher-layer crate from the sibling `sc-observability` workspace
 
 ### `scterm-atm`
 
@@ -101,16 +97,16 @@ Forbidden:
 
 ## Observability Dependency Policy
 
-Initial structured logging policy:
+Structured logging policy:
 
-- use `sc-observability` only
-- do not adopt other crates from the sibling `sc-observability` workspace yet
+- use the self-contained `AppLogger` in `scterm-app` (serde_json + std::io) only
+- no external observability crate dependency is required or permitted in this repo
 - keep observability as local structured logging rather than a broader event bus
 
 Rationale:
 
 - structured logs are immediately useful for implementation and debugging
-- broader observability layering would widen the initial dependency graph
+- a standalone AppLogger avoids all external observability crate dependencies
 - additional observability layers are intentionally deferred from this repo’s
   approved design docs
 
@@ -122,5 +118,5 @@ Future CI should validate:
 - no `agent-team-mail-*` dependencies
 - no ATM Rust imports
 - no `ATM_HOME` references
-- no higher-layer `sc-observability` workspace crates in Sprint 1 manifests
+- no `sc-observability` or external observability crate in any manifest
 - no runtime crates in `scterm-core`

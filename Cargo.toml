@@ -1,0 +1,27 @@
+[workspace]
+members = ["scterm-core", "scterm-unix", "scterm-app", "scterm-atm"]
+resolver = "2"
+
+[workspace.package]
+description = "Rust workspace for the scterm terminal session manager."
+edition = "2021"
+keywords = ["terminal", "pty", "session"]
+license = "MIT"
+categories = ["command-line-utilities"]
+readme = "README.md"
+repository = "https://github.com/randlee/scterm"
+
+[workspace.dependencies]
+thiserror = "2.0"
+
+[workspace.lints.rust]
+missing_docs = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }

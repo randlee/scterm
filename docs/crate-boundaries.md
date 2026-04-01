@@ -104,13 +104,11 @@ May depend on:
 
 - `scterm-core`
 - `scterm-unix`
-- `sc-observability`
+- one application error crate such as `anyhow`
+- `serde_json` (via AppLogger)
 - one application error crate such as `anyhow`
 
 Must not depend on:
-
-- any higher-layer crate from the sibling `sc-observability` workspace
-
 Must not know about:
 
 - later observability concerns beyond local structured logging
@@ -134,7 +132,7 @@ Must not depend on:
 
 - `scterm-unix`
 - PTY internals
-- any higher-layer crate from the sibling `sc-observability` workspace
+- any external observability crate
 
 Must not know about:
 
@@ -144,17 +142,15 @@ Must not know about:
 
 ## Logging Boundary
 
-Initial structured logging is provided by the sibling `sc-observability`
-workspace.
+Structured logging is provided by the self-contained `AppLogger` in
+`scterm-app`, implemented with `serde_json` and `std::io`. No external
+observability crate dependency is required or permitted in this repo.
 
 Boundary rules:
 
-- only `scterm-app` and the final binary wiring may depend directly on
-  `sc-observability`
+- only `scterm-app` and the final binary own and configure the `AppLogger`
 - `scterm-core` and `scterm-unix` do not configure or own logger lifecycle
 - lower crates prefer rich typed errors and return values over ad-hoc logging
-- no other crate from the sibling `sc-observability` workspace is permitted in
-  Sprint 1
 
 ## Boundary Review Questions
 

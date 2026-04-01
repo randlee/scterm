@@ -1,8 +1,14 @@
 # scterm Implementation Plan
 
+> **Status: ARCHIVED — migration-phase document**
+> This document captured the phased delivery sequence for Sprint 1 and Sprint 2.
+> All phases are complete. This document is retained for historical reference only
+> and carries no ongoing obligations. New implementation work is tracked in
+> `docs/requirements.md` and the project plan section of the sprint assignments.
+
 ## Purpose
 
-This document defines the implementation order that preserves architecture
+This document defined the implementation order that preserves architecture
 boundaries and minimizes rework.
 
 ## Implementation Rule

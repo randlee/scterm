@@ -71,8 +71,16 @@ jobs:
 
       - name: Enforce ATM boundary
         run: |
-          if grep -r 'agent.team.mail\|agent_team_mail\|atm_\|use atm::\|ATM_HOME' \
-               --include='*.rs' --include='Cargo.toml' .; then
+          if grep -rn \
+               --include='*.rs' \
+               --include='Cargo.toml' \
+               -e 'agent.team.mail' \
+               -e 'agent_team_mail' \
+               -e 'ATM_HOME' \
+               -e 'use atm::' \
+               -e 'use atm_' \
+               -e 'extern crate atm_' \
+               .; then
             echo "ERROR: ATM crate dependency or ATM_HOME reference found in scterm source."
             echo "All ATM integration must remain in ATM adapters, not in this repo."
             exit 1
@@ -115,6 +123,14 @@ jobs:
         run: |
           if [ -f Cargo.toml ]; then
             cargo build --workspace
+          else
+            echo "No Cargo.toml — skipping (docs-only branch)"
+          fi
+
+      - name: Build with ATM feature
+        run: |
+          if [ -f Cargo.toml ]; then
+            cargo build --workspace --features atm
           else
             echo "No Cargo.toml — skipping (docs-only branch)"
           fi
