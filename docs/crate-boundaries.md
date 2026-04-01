@@ -142,14 +142,15 @@ Must not know about:
 
 ## Logging Boundary
 
-Structured logging is provided by the self-contained `AppLogger` in
-`scterm-app`, implemented with `serde_json` and `std::io`. No external
-observability crate dependency is required or permitted in this repo.
+Structured logging in `scterm-app` uses `sc-observability` as the mandated
+backend. Lower crates (`scterm-core`, `scterm-unix`, `scterm-atm`) remain
+backend-agnostic and do not initialize or shut down the logging subsystem.
 
 Boundary rules:
 
 - only `scterm-app` and the final binary own and configure the `AppLogger`
-- `scterm-core` and `scterm-unix` do not configure or own logger lifecycle
+- `scterm-core`, `scterm-unix`, and `scterm-atm` do not configure or own
+  logger lifecycle
 - lower crates prefer rich typed errors and return values over ad-hoc logging
 
 ## Boundary Review Questions

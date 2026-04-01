@@ -96,7 +96,7 @@ This is a correctness requirement, not a performance optimization.
 
 ## ADR-TERM-APP-002 — Observability Is App-Owned
 
-The self-contained `AppLogger` is wired at the binary entry point by
+The sc-observability-backed `AppLogger` is wired at the binary entry point by
 `scterm-app`. No lower crate initializes or shuts down the logging subsystem.
 
 ## ADR-TERM-APP-003 — anyhow at the Application Boundary Only
@@ -140,10 +140,8 @@ Rationale:
   A self-contained `AppLogger` writing to its own root provides no coordination
   with the rest of the ecosystem.
 - `sc-observability` provides `LoggerConfig::default_for(service, log_root)`,
-  where the log root is injected by the caller. The ATM app layer sets
-  `SC_LOG_ROOT` at launch time to unify all tool logs under one root without
-  requiring `scterm` to read `ATM_HOME` directly (preserving the ATM boundary
-  rule in CLAUDE.md).
+  where the log root is injected by the caller. That keeps shared log-root
+  selection outside `scterm-app` while preserving the repo's ATM boundary rule.
 - `sc-observability` provides a path toward OTel export (`sc-observability-otlp`)
   when that requirement matures, without requiring another breaking change to
   this crate's logging integration point.

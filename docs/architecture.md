@@ -250,6 +250,8 @@ The runtime model must remain explicit.
 Structured logging is intentionally application-owned. The top-level rule is
 that only `scterm-app` and the final binary configure or own the logger
 lifecycle; lower crates remain logging-implementation-agnostic.
+`scterm-app` uses `sc-observability` as the mandated backend per
+`scterm-app/architecture.md` (`ADR-TERM-APP-006`).
 
 The crate-local logging design lives in:
 
