@@ -48,6 +48,7 @@ Must not depend on:
 - Unix socket APIs
 - PTY APIs
 - `sc-observability`
+- `sc-observability-types`
 - `atm`
 
 Must not know about:
@@ -79,7 +80,8 @@ Must not depend on:
 
 - `scterm-atm`
 - CLI parser crates
-- `sc-observability` or any crate from the sibling `sc-observability` workspace
+- `sc-observability`
+- `sc-observability-types`
 
 Must not know about:
 
@@ -104,11 +106,15 @@ May depend on:
 
 - `scterm-core`
 - `scterm-unix`
+- `sc-observability`
+- `sc-observability-types`
 - one application error crate such as `anyhow`
 - `serde_json` (via AppLogger)
-- one application error crate such as `anyhow`
 
 Must not depend on:
+
+- ATM Rust crates
+
 Must not know about:
 
 - later observability concerns beyond local structured logging
@@ -142,14 +148,16 @@ Must not know about:
 
 ## Logging Boundary
 
-Structured logging is provided by the self-contained `AppLogger` in
-`scterm-app`, implemented with `serde_json` and `std::io`. No external
-observability crate dependency is required or permitted in this repo.
+Structured logging in `scterm-app` uses `sc-observability` as the mandated
+backend and `sc-observability-types` for the shared log type contracts. Lower
+crates (`scterm-core`, `scterm-unix`, `scterm-atm`) remain backend-agnostic
+and do not initialize or shut down the logging subsystem.
 
 Boundary rules:
 
 - only `scterm-app` and the final binary own and configure the `AppLogger`
-- `scterm-core` and `scterm-unix` do not configure or own logger lifecycle
+- `scterm-core`, `scterm-unix`, and `scterm-atm` do not configure or own
+  logger lifecycle
 - lower crates prefer rich typed errors and return values over ad-hoc logging
 
 ## Boundary Review Questions

@@ -71,13 +71,14 @@ Allowed:
 Forbidden:
 
 - ATM libraries
-- `sc-observability` or any crate from the sibling `sc-observability` workspace
+- `sc-observability` in `scterm-unix` directly (observability is app-layer only)
 
 ### `scterm-app`
 
 Allowed:
 
-- `serde_json` (via AppLogger — no external observability crate)
+- `sc-observability` and `sc-observability-types` (structured logging backend)
+- `time` (for `OffsetDateTime::now_utc()` in `LogEvent` construction)
 - CLI parsing crate
 - one application error crate
 
@@ -93,22 +94,31 @@ Forbidden:
 
 - ATM Rust crates
 - PTY and Unix runtime internals from `scterm-unix`
-- any higher-layer crate from the sibling `sc-observability` workspace
+- `sc-observability` (observability initialization belongs to `scterm-app`)
 
 ## Observability Dependency Policy
 
 Structured logging policy:
 
-- use the self-contained `AppLogger` in `scterm-app` (serde_json + std::io) only
-- no external observability crate dependency is required or permitted in this repo
-- keep observability as local structured logging rather than a broader event bus
+- `scterm-app` depends on `sc-observability` as the JSONL logging backend.
+- `scterm-app` owns the logger lifecycle; lower crates do not initialize or
+  shut down the logging subsystem.
+- `scterm-core` and `scterm-unix` are logging-implementation-agnostic. They
+  do not depend on `sc-observability` or any logging backend.
+- The `SC_LOG_ROOT` environment variable is the cross-tool log root convention.
+  The ATM app layer sets this at launch so `scterm` and `schook` logs land in a
+  consistent location. `scterm` never reads `ATM_HOME` directly.
 
-Rationale:
+OTel path:
 
-- structured logs are immediately useful for implementation and debugging
-- a standalone AppLogger avoids all external observability crate dependencies
-- additional observability layers are intentionally deferred from this repo’s
-  approved design docs
+- `sc-observability-otlp` is the planned OTel export layer. When that
+  requirement matures, it is wired in `scterm-app` only; lower layers remain
+  unaffected.
+
+Dependency version constraint:
+
+- A path dep to the local `../sc-observability` repo is used until the crate is
+  published to crates.io. Replace with a version pin after publish.
 
 ## CI Enforcement Targets
 
@@ -118,5 +128,5 @@ Future CI should validate:
 - no `agent-team-mail-*` dependencies
 - no ATM Rust imports
 - no `ATM_HOME` references
-- no `sc-observability` or external observability crate in any manifest
+- no `sc-observability` in `scterm-core`, `scterm-unix`, or `scterm-atm`
 - no runtime crates in `scterm-core`

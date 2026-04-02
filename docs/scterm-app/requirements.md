@@ -21,8 +21,8 @@ Crate-level architecture decisions use the prefix `ADR-TERM-APP-*`.
 - attach client loop (log replay, ring replay, live streaming)
 - PTY input serialization across all input sources
 - session log replay and ring replay orchestration
-- structured logging setup and logger lifecycle via the self-contained
-  `AppLogger`
+- structured logging setup and logger lifecycle via the
+  `sc-observability`-backed `AppLogger`
 - CLI command parsing, aliases, legacy single-letter modes
 - user-facing message rendering and exit codes
 - wiring of platform services and domain logic into session workflows
@@ -72,11 +72,11 @@ Satisfies: CLI Boundary section in `../architecture.md`.
 (`scterm-core`, `scterm-unix`) must not configure sinks, logger lifecycle, or
 log file policy.
 
-The decision to replace `sc-observability` with the self-contained `AppLogger`
-is recorded in `architecture.md` (`ADR-TERM-APP-005`). The prohibition on
-external observability dependencies also appears in `../requirements.md`
-(`Structured Logging`) and `../dependency-policy.md`
-(`Observability Dependency Policy`).
+The decision to standardize on an `sc-observability`-backed `AppLogger` is
+recorded in `architecture.md` (`ADR-TERM-APP-006`). `scterm-app` is the only
+crate that owns the logging backend choice; lower crates remain backend
+agnostic as required by `../requirements.md` (`Structured Logging`) and
+`../dependency-policy.md` (`Observability Dependency Policy`).
 
 Satisfies: Structured Logging section in `../requirements.md`.
 

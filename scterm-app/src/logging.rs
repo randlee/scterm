@@ -5,97 +5,89 @@
 )]
 
 use anyhow::{Context, Result};
-use serde_json::json;
-use std::fs::{self, File, OpenOptions};
-use std::io::Write;
-#[cfg(test)]
-use std::path::Path;
+use sc_observability::{Logger, LoggerConfig};
+use sc_observability_types::{
+    ActionName, Level, LogEvent, ProcessIdentity, ServiceName, TargetCategory,
+};
+use serde_json::Map;
 use std::path::PathBuf;
-use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use time::OffsetDateTime;
 
-/// A minimal structured logger owned by `scterm-app`.
+const SERVICE_NAME: &str = "scterm";
+
+/// Application-scoped structured logger backed by `sc-observability`.
 ///
-/// The implementation keeps the logging boundary local to the application
-/// layer using `serde_json` and `std::io` directly — no external observability
-/// crate dependency.
+/// Wraps [`sc_observability::Logger`] with a simple `emit(target, action, message)` API
+/// consistent with the Rust ecosystem logging convention. Log root and service name are
+/// fixed at construction; the caller supplies the root directory.
+///
+/// Log files are written to `{log_root}/scterm/logs/scterm.log.jsonl` (rotated by
+/// the sc-observability defaults).
+///
+/// The log root can also be set via the `SC_LOG_ROOT` environment variable when `log_root`
+/// is empty. When `log_root` is empty, the caller may set `SC_LOG_ROOT` to specify a
+/// shared log root.
 pub struct AppLogger {
-    path: PathBuf,
-    file: Mutex<File>,
+    inner: Logger,
+    service: ServiceName,
 }
 
 impl std::fmt::Debug for AppLogger {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("AppLogger")
-            .field("path", &self.path)
+            .field("service", &self.service)
             .finish_non_exhaustive()
     }
 }
 
 impl AppLogger {
-    /// Creates an application-scoped JSONL logger rooted at `log_root`.
+    /// Creates an application-scoped structured logger rooted at `log_root`.
     ///
     /// # Errors
-    /// Returns an error when the log directory cannot be created.
+    /// Returns an error when the log directory cannot be created or the logger
+    /// fails to initialize.
     pub fn new(log_root: impl Into<PathBuf>) -> Result<Self> {
-        let log_root = log_root.into();
-        let path = log_root
-            .join("scterm")
-            .join("logs")
-            .join("scterm.log.jsonl");
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create app log directory {}", parent.display()))?;
-        }
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .with_context(|| format!("open app structured log {}", path.display()))?;
-
-        Ok(Self {
-            path,
-            file: Mutex::new(file),
-        })
+        let service =
+            ServiceName::new(SERVICE_NAME).expect("'scterm' is a valid service name identifier");
+        let config = LoggerConfig::default_for(service.clone(), log_root.into());
+        let inner = Logger::new(config).context("initialize sc-observability logger for scterm")?;
+        Ok(Self { inner, service })
     }
 
     /// Appends one structured event line.
     ///
+    /// `target` and `action` must satisfy `[A-Za-z0-9._-]+`.
+    ///
     /// # Errors
-    /// Returns an error when the log file cannot be opened or written.
+    /// Returns an error when `target` or `action` fail validation, or when the
+    /// underlying log sink cannot be written.
     pub fn emit(&self, target: &str, action: &str, message: &str) -> Result<()> {
-        let timestamp_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("system clock precedes UNIX_EPOCH")?
-            .as_millis();
-        let event = json!({
-            "version": 1,
-            "timestamp_ms": timestamp_ms,
-            "level": "INFO",
-            "service": "scterm",
-            "target": target,
-            "action": action,
-            "message": message,
-            "outcome": "ok",
-        });
-        let mut file = self
-            .file
-            .lock()
-            .map_err(|_| anyhow::anyhow!("app structured logger mutex poisoned"))?;
-        writeln!(file, "{event}")
-            .with_context(|| format!("emit structured log event to {}", self.path.display()))?;
-        file.flush()
-            .with_context(|| format!("flush structured log event to {}", self.path.display()))?;
-        drop(file);
+        let target = TargetCategory::new(target)
+            .with_context(|| format!("invalid log target category: {target:?}"))?;
+        let action = ActionName::new(action)
+            .with_context(|| format!("invalid log action name: {action:?}"))?;
+        let event = LogEvent {
+            version: sc_observability_types::constants::OBSERVATION_ENVELOPE_VERSION.to_string(),
+            timestamp: OffsetDateTime::now_utc(),
+            level: Level::Info,
+            service: self.service.clone(),
+            target,
+            action,
+            message: Some(message.to_owned()),
+            identity: ProcessIdentity::default(),
+            trace: None,
+            request_id: None,
+            correlation_id: None,
+            outcome: Some("ok".to_owned()),
+            diagnostic: None,
+            state_transition: None,
+            fields: Map::default(),
+        };
+        self.inner
+            .emit(event)
+            .context("emit structured log event to sc-observability")?;
         Ok(())
-    }
-
-    /// Returns the JSONL log file path.
-    #[cfg(test)]
-    #[must_use]
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 }
 
@@ -112,7 +104,12 @@ mod tests {
 
         logger.emit("master", "start", "session starting")?;
 
-        let contents = std::fs::read_to_string(logger.path())?;
+        let log_path = tempdir
+            .path()
+            .join("scterm")
+            .join("logs")
+            .join("scterm.log.jsonl");
+        let contents = std::fs::read_to_string(&log_path).expect("log file should exist");
         assert!(contents.contains("\"target\":\"master\""));
         assert!(contents.contains("\"action\":\"start\""));
         Ok(())

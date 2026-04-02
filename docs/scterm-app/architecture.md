@@ -96,7 +96,7 @@ This is a correctness requirement, not a performance optimization.
 
 ## ADR-TERM-APP-002 — Observability Is App-Owned
 
-The self-contained `AppLogger` is wired at the binary entry point by
+The sc-observability-backed `AppLogger` is wired at the binary entry point by
 `scterm-app`. No lower crate initializes or shuts down the logging subsystem.
 
 ## ADR-TERM-APP-003 — anyhow at the Application Boundary Only
@@ -119,27 +119,45 @@ It owns:
 
 It does not own PTY/socket primitives or portable domain predicates.
 
-## ADR-TERM-APP-005 — Self-Contained AppLogger Replaces sc-observability
+## ADR-TERM-APP-005 — In-Repo AppLogger (SUPERSEDED by ADR-TERM-APP-006)
 
-This crate standardizes on a self-contained `AppLogger` implemented with
+~~This crate standardizes on an in-repo `AppLogger` implemented with
 `serde_json` and `std::io` instead of a dependency on the sibling
-`sc-observability` workspace.
+`sc-observability` workspace.~~
+
+**Superseded.** This decision was reversed by ADR-TERM-APP-006 when the
+ecosystem consistency requirement became clear: logs from `scterm` and `schook`
+must land in a consistent location when both are loaded in the ATM application.
+
+## ADR-TERM-APP-006 — AppLogger Backed by sc-observability
+
+`scterm-app` uses `sc-observability` as the structured logging backend.
 
 Rationale:
 
-- local structured logging is required immediately for debugging and CI
-- the prior `sc-observability` direction widened the dependency surface without
-  being required for the approved Sprint 1/2 design
-- keeping observability local to `scterm-app` preserves crate boundaries and
-  avoids introducing a broader observability subsystem into this repo
+- When `scterm` and `schook` are both used in the ATM application, all tool
+  logs must go to a consistent root directory so they are discoverable together.
+  An in-repo `AppLogger` writing to its own root provides no coordination
+  with the rest of the ecosystem.
+- `sc-observability` provides `LoggerConfig::default_for(service, log_root)`,
+  where the log root is injected by the caller. That keeps shared log-root
+  selection outside `scterm-app` while preserving the repo's ATM boundary rule.
+- `sc-observability` provides a path toward OTel export (`sc-observability-otlp`)
+  when that requirement matures, without requiring another breaking change to
+  this crate's logging integration point.
 
-What changed:
+Architecture:
 
-- `scterm-app` owns logger lifecycle directly
-- lower crates remain logging-implementation-agnostic
-- dependency policy now treats `sc-observability` as forbidden in this repo
+- `scterm-app` depends on `sc-observability` and `sc-observability-types`.
+- `scterm-core` and `scterm-unix` remain logging-implementation-agnostic.
+- `AppLogger` in `scterm-app/src/logging.rs` wraps `sc_observability::Logger`
+  behind the same `emit(target, action, message) -> Result<()>` API —
+  callers are unchanged.
 
-When:
+Dependency constraint:
 
-- this decision was recorded during the `docs/content-migration` compliance
-  pass after the post-sprint documentation inventory review
+- A path dep to the local
+  `../../../../sc-observability/crates/sc-observability` workspace path is
+  used until the crate is published to crates.io as part of the versioning
+  standards rollout, at which point the path dep is replaced with a version
+  pin.

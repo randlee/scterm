@@ -13,6 +13,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out sc-observability (path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: randlee/sc-observability
+          ref: develop
+          path: .path-deps/sc-observability
+
+      - name: Link sc-observability path dependency
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/../../sc-observability"
+          ln -s "$GITHUB_WORKSPACE/.path-deps/sc-observability" \
+            "$GITHUB_WORKSPACE/../../sc-observability"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -32,6 +45,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out sc-observability (path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: randlee/sc-observability
+          ref: develop
+          path: .path-deps/sc-observability
+
+      - name: Link sc-observability path dependency
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/../../sc-observability"
+          ln -s "$GITHUB_WORKSPACE/.path-deps/sc-observability" \
+            "$GITHUB_WORKSPACE/../../sc-observability"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -97,6 +123,19 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out sc-observability (path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: randlee/sc-observability
+          ref: develop
+          path: .path-deps/sc-observability
+
+      - name: Link sc-observability path dependency
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/../../sc-observability"
+          ln -s "$GITHUB_WORKSPACE/.path-deps/sc-observability" \
+            "$GITHUB_WORKSPACE/../../sc-observability"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
