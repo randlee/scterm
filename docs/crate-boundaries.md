@@ -80,7 +80,8 @@ Must not depend on:
 
 - `scterm-atm`
 - CLI parser crates
-- `sc-observability` or any crate from the sibling `sc-observability` workspace
+- `sc-observability`
+- `sc-observability-types`
 
 Must not know about:
 
