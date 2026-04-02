@@ -104,11 +104,15 @@ May depend on:
 
 - `scterm-core`
 - `scterm-unix`
+- `sc-observability`
+- `sc-observability-types`
 - one application error crate such as `anyhow`
 - `serde_json` (via AppLogger)
-- one application error crate such as `anyhow`
 
 Must not depend on:
+
+- ATM Rust crates
+
 Must not know about:
 
 - later observability concerns beyond local structured logging
