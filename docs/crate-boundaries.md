@@ -48,6 +48,7 @@ Must not depend on:
 - Unix socket APIs
 - PTY APIs
 - `sc-observability`
+- `sc-observability-types`
 - `atm`
 
 Must not know about:
@@ -147,8 +148,9 @@ Must not know about:
 ## Logging Boundary
 
 Structured logging in `scterm-app` uses `sc-observability` as the mandated
-backend. Lower crates (`scterm-core`, `scterm-unix`, `scterm-atm`) remain
-backend-agnostic and do not initialize or shut down the logging subsystem.
+backend and `sc-observability-types` for the shared log type contracts. Lower
+crates (`scterm-core`, `scterm-unix`, `scterm-atm`) remain backend-agnostic
+and do not initialize or shut down the logging subsystem.
 
 Boundary rules:
 
