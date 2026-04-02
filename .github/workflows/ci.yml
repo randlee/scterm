@@ -18,7 +18,13 @@ jobs:
         with:
           repository: randlee/sc-observability
           ref: develop
-          path: ../../../../sc-observability
+          path: .path-deps/sc-observability
+
+      - name: Link sc-observability path dependency
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/../../sc-observability"
+          ln -s "$GITHUB_WORKSPACE/.path-deps/sc-observability" \
+            "$GITHUB_WORKSPACE/../../sc-observability"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -45,7 +51,13 @@ jobs:
         with:
           repository: randlee/sc-observability
           ref: develop
-          path: ../../../../sc-observability
+          path: .path-deps/sc-observability
+
+      - name: Link sc-observability path dependency
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/../../sc-observability"
+          ln -s "$GITHUB_WORKSPACE/.path-deps/sc-observability" \
+            "$GITHUB_WORKSPACE/../../sc-observability"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -117,7 +129,13 @@ jobs:
         with:
           repository: randlee/sc-observability
           ref: develop
-          path: ../../../../sc-observability
+          path: .path-deps/sc-observability
+
+      - name: Link sc-observability path dependency
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/../../sc-observability"
+          ln -s "$GITHUB_WORKSPACE/.path-deps/sc-observability" \
+            "$GITHUB_WORKSPACE/../../sc-observability"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
